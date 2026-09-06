@@ -251,7 +251,8 @@ function isPrimaryAdmin(array $user): bool
 
 function usesUserView(array $user): bool
 {
-    return ($user['role'] ?? '') === 'USER';
+    return ($user['role'] ?? '') === 'USER'
+        || (($user['role'] ?? '') === 'ADMIN' && !isPrimaryAdmin($user));
 }
 
 function canViewRiskDashboard(array $user): bool
