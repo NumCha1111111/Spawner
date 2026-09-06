@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 
 $user = currentUser();
-if ($user !== null && !isPrimaryAdmin($user)) {
+if ($user !== null && ($user['role'] ?? '') !== 'ADMIN') {
     header('Location: user.php');
     exit;
 }

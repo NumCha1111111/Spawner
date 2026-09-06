@@ -6,7 +6,7 @@ require_once __DIR__ . '/bootstrap.php';
 if (!defined('PAGE_ROLE')) {
     $signedInUser = currentUser();
     if ($signedInUser !== null) {
-        header('Location: ' . (isPrimaryAdmin($signedInUser) ? 'admin.php' : 'user.php'));
+        header('Location: ' . (($signedInUser['role'] ?? '') === 'ADMIN' ? 'admin.php' : 'user.php'));
         exit;
     }
 
@@ -300,20 +300,39 @@ async function adminView(){
 function openReviewBatch(groupId){const group=state.reviewGroups?.[groupId];if(!group)return;const modal=document.createElement('div');modal.className='modal-backdrop';modal.innerHTML='<section class="modal batch-modal" role="dialog" aria-modal="true" aria-labelledby="batchTitle"><div class="modal-head"><div><div class="eyebrow">รายละเอียดชุดคำขอ</div><h2 id="batchTitle">'+esc(group.username)+' · '+esc(group.action)+'</h2></div><button type="button" class="secondary" id="closeBatch">ปิด</button></div><div class="inventory-total"><strong>'+esc(group.total_quantity)+'</strong><span>กรงรวมทั้งหมด<br>'+esc(group.item_count)+' ชนิดในชุดนี้</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>ชนิดกรง</th><th>จำนวน</th></tr></thead><tbody>'+group.items.map((item,index)=>'<tr><td>'+Number(index+1)+'</td><td>'+esc(item.cage_type)+'</td><td><strong class="'+(item.action==='ADD'?'quantity-add':'quantity-remove')+'">'+esc(item.quantity)+'</strong></td></tr>').join('')+'</tbody></table></div><div class="actions modal-actions" style="margin-top:16px"><button class="secondary" id="approveBatch">อนุมัติทั้งชุด</button><button class="danger" id="rejectBatch">ปฏิเสธทั้งชุด</button></div></section>';document.body.appendChild(modal);const close=()=>modal.remove();modal.querySelector('#closeBatch').onclick=close;modal.onclick=event=>{if(event.target===modal)close()};modal.querySelector('#approveBatch').onclick=()=>{close();reviewBatch(groupId,'approve')};modal.querySelector('#rejectBatch').onclick=()=>{close();reviewBatch(groupId,'reject')}}
 async function reviewBatch(groupId,action){try{await api('admin/review-batches/'+groupId+'/'+action,{method:'POST'});adminView()}catch(error){alert(error.message)}}
 async function openAdminUserInventories(){const opener=document.activeElement;const modal=document.createElement('div');modal.className='modal-backdrop';modal.innerHTML='<section class="modal user-inventory-modal" role="dialog" aria-modal="true" aria-labelledby="userInventoryTitle"><div class="modal-head"><div><div class="eyebrow">ADMIN VIEW</div><h2 id="userInventoryTitle">กรงของแต่ละคนที่ส่งมา</h2></div><button type="button" class="secondary" data-close-user-inventories>ปิด</button></div><div class="user-inventory-view"><div class="user-inventory-loading" role="status">กำลังโหลดรายชื่อผู้ใช้</div></div></section>';document.body.appendChild(modal);const view=modal.querySelector('.user-inventory-view');const title=modal.querySelector('#userInventoryTitle');const close=()=>{modal.remove();opener?.focus?.()};const showList=users=>{title.textContent='กรงของแต่ละคนที่ส่งมา';const rows=users.map((user,index)=>'<section class="user-inventory-card"><h3 class="user-inventory-name" title="'+esc(user.username)+'">'+esc(user.username)+'</h3><span class="user-inventory-total">รวม '+esc(user.total_quantity)+' กรง</span><button type="button" class="secondary user-inventory-open" data-user-index="'+index+'">ดูรายการ</button></section>').join('');view.innerHTML=rows?'<div class="user-inventory-list">'+rows+'</div>':'<div class="user-inventory-empty">ยังไม่มีผู้ใช้ในระบบ</div>';view.querySelectorAll('[data-user-index]').forEach(button=>button.onclick=()=>showDetail(users[Number(button.dataset.userIndex)]))};const showDetail=user=>{title.textContent=user.username;const items=Array.isArray(user.items)?user.items:[];const rows=items.map(item=>'<tr><td>'+esc(item.cage_type)+'</td><td><strong>'+esc(item.quantity)+'</strong></td></tr>').join('');view.innerHTML='<div class="user-inventory-detail-summary"><span>ยอดกรงที่ผ่านการอนุมัติ</span><strong>'+esc(user.total_quantity)+' กรง</strong></div>'+(rows?'<div class="table-wrap user-inventory-table-wrap"><table class="user-inventory-table"><thead><tr><th>ชนิดกรง</th><th>จำนวน</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="user-inventory-empty">ผู้ใช้นี้ยังไม่มีกรงที่ผ่านการอนุมัติ</div>')+'<div class="actions" style="margin-top:16px"><button type="button" class="secondary" data-back-user-list>← กลับไปรายชื่อผู้ใช้</button></div>';view.querySelector('[data-back-user-list]').onclick=()=>showList(result.users)};modal.querySelector('[data-close-user-inventories]').onclick=close;modal.onclick=event=>{if(event.target===modal)close()};modal.onkeydown=event=>{if(event.key==='Escape')close()};modal.querySelector('[data-close-user-inventories]').focus();let result;try{result=await api('admin/user-inventories');result.users=Array.isArray(result.users)?result.users:[];showList(result.users)}catch(error){view.innerHTML='<div class="user-inventory-empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong><br>'+esc(error.message)+'</div>'}}
-function decorateAccount(){const account=document.querySelector('#account');if(!account||account.dataset.decorated)return;const pill=account.querySelector('.pill');if(!pill)return;const name=(state.user&&state.user.username)||pill.textContent.split('·')[0].trim();account.dataset.decorated='1';pill.className='account-user';pill.textContent=name;if(pageRole==='ADMIN')document.querySelector('.hero')?.remove();account.querySelectorAll('button').forEach(button=>button.classList.add('logout-button'));const myTotal=account.querySelector('#myTotal');if(myTotal)myTotal.textContent='กรงของแต่ละคนที่ส่งมา';if(pageRole==='ADMIN'&&!account.querySelector('#allUserInventories')){const button=document.createElement('button');button.id='allUserInventories';button.className='secondary';button.textContent='กรงของแต่ละคน';button.onclick=openAdminUserInventories;const logout=account.querySelector('#logout');account.insertBefore(button,logout)}}
+function decorateAccount(){const account=document.querySelector('#account');if(!account||account.dataset.decorated)return;const pill=account.querySelector('.pill');if(!pill)return;const name=(state.user&&state.user.username)||pill.textContent.split('·')[0].trim();account.dataset.decorated='1';pill.className='account-user';pill.textContent=name;if(pageRole==='ADMIN')document.querySelector('.hero')?.remove();account.querySelectorAll('button').forEach(button=>button.classList.add('logout-button'));const myTotal=account.querySelector('#myTotal');if(myTotal)myTotal.textContent='กรงของแต่ละคนที่ส่งมา';if(pageRole==='ADMIN'&&state.user?.is_primary_admin&&!account.querySelector('#allUserInventories')){const button=document.createElement('button');button.id='allUserInventories';button.className='secondary';button.textContent='กรงของแต่ละคน';button.onclick=openAdminUserInventories;const logout=account.querySelector('#logout');account.insertBefore(button,logout)}}
 function adjustHistoryTime(){document.querySelectorAll('#content table').forEach(table=>{if(table.dataset.timeAdjusted)return;const headers=[...table.querySelectorAll('thead th')];if(!headers.some(header=>header.textContent.trim()==='ผู้ทำรายการ'))return;table.dataset.timeAdjusted='1';headers[0].textContent='เวลา';headers[0].style.width='28%'})}
 new MutationObserver(adjustHistoryTime).observe(document.body,{childList:true,subtree:true});
 new MutationObserver(()=>{decorateNumericTables();const account=document.querySelector('#account');if(account&&account.dataset.decorated!=='1')decorateAccount()}).observe(document.body,{childList:true,subtree:true});
 
 const pageRole=<?= json_encode(PAGE_ROLE, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
+const renderPrimaryAdminView=adminView;
+adminView=async function(){
+  if(state.user?.is_primary_admin)return renderPrimaryAdminView();
+  const q=await api('admin/pending-reviews');
+  state.reviewGroups=Object.fromEntries(q.items.map(group=>[group.group_id,group]));
+  const rows=q.items.map(group=>'<tr><td data-label="ผู้ส่ง"><span class="review-user">'+esc(group.username)+'</span></td><td data-label="รายการ"><div class="packet-summary"><div><strong class="packet-amount '+(group.action==='ADD'?'quantity-add':'quantity-remove')+'">'+esc(group.action==='ADD'?'เพิ่ม':'ลบ')+' '+esc(group.total_quantity)+' กรง</strong><span class="packet-meta">'+esc(group.item_count)+' ชนิดในชุดนี้</span></div><button class="secondary details-button" onclick="openReviewBatch(\''+group.group_id+'\')">ดูรายการ</button></div></td><td data-label="จัดการ"><div class="actions review-actions"><button class="secondary" onclick="reviewBatch(\''+group.group_id+'\',\'approve\')">อนุมัติ</button><button class="danger" onclick="reviewBatch(\''+group.group_id+'\',\'reject\')">ปฏิเสธ</button></div></td></tr>').join('');
+  document.querySelector('#content').innerHTML='<section class="panel review-panel"><div class="review-panel-head"><div><div class="eyebrow">APPROVAL DASHBOARD</div><h2>อนุมัติรายการเพิ่มหรือลบกรง</h2></div><span class="review-count">'+q.items.length+' ชุดคำขอ</span></div>'+(rows?'<div class="table-wrap review-table-wrap"><table class="review-table"><thead><tr><th>ชื่อผู้ส่ง</th><th>รายการ</th><th>จัดการ</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="empty-state">ไม่มีรายการที่รออนุมัติในขณะนี้</div>')+'</section>';
+};
+
+const renderPrimaryAdminUsersPage=adminUsersPage;
+adminUsersPage=async function(){
+  if(state.user?.is_primary_admin)return renderPrimaryAdminUsersPage();
+  const result=await api('admin/users');
+  const rows=result.users.map((user,index)=>'<tr><td class="numeric-column">'+(index+1)+'</td><td><strong>'+esc(user.username)+'</strong></td></tr>').join('');
+  document.querySelector('#content').innerHTML='<button class="secondary" id="backAdmin">กลับ Dashboard</button><div class="grid" style="margin-top:18px"><section class="panel"><div class="eyebrow">USER MANAGEMENT</div><h2>เพิ่มคน</h2><p class="metric">ผู้ใช้ใหม่เข้าสู่ระบบด้วยชื่อที่กำหนดไว้ โดยไม่ต้องใช้รหัสผ่าน</p><form id="newUser"><label>ชื่อผู้ใช้</label><input name="username" maxlength="80" required><button class="primary" style="margin-top:14px">เพิ่มผู้ใช้</button><div id="userMsg"></div></form></section><section class="panel"><div class="eyebrow">PEOPLE</div><h2>รายชื่อผู้ใช้</h2><div class="table-wrap"><table><thead><tr><th>#</th><th>ชื่อผู้ใช้</th></tr></thead><tbody>'+rows+'</tbody></table></div></section></div>';
+  document.querySelector('#backAdmin').onclick=adminView;
+  document.querySelector('#newUser').onsubmit=async event=>{event.preventDefault();const form=new FormData(event.target);try{const created=await api('admin/users',{method:'POST',body:JSON.stringify({username:form.get('username')})});document.querySelector('#userMsg').innerHTML='<div class="notice">'+esc(created.message)+'</div>';adminUsersPage()}catch(error){document.querySelector('#userMsg').innerHTML='<p class="error">'+esc(error.message)+'</p>'}};
+};
+
 renderApp=async function(){
   const adminPage=pageRole==='ADMIN';
   layout('<section class="hero"><div class="eyebrow">'+(adminPage?'Operations console':'Shared inventory')+'</div><h1>'+(adminPage?'ดูเฉพาะสิ่งที่ผิดปกติ':'จำนวนกรงที่ทุกคนส่ง อยู่ในที่เดียว')+'</h1><p>'+(adminPage?'รายการปกติจะผ่านอัตโนมัติ หน้านี้จะแสดงเฉพาะรายการที่ต้องใช้ดุลยพินิจ':'ยอดกรงหน้านี้รวมรายการที่ผ่านการอนุมัติของผู้ใช้ทุกคน')+'</p></section><div id="content"></div>');
-  document.querySelector('#account').innerHTML='<span class="pill">'+esc(state.user.username)+'</span> '+(adminPage?'<button id="addCages" class="secondary">หน้าเพิ่มกรง</button><button id="addUsers" class="secondary">เพิ่มคน</button>':'<button id="myTotal" class="secondary">ยอดกรงที่ทุกคนส่ง</button>')+' <button id="logout" class="secondary">ออกจากระบบ</button>';
+  document.querySelector('#account').innerHTML='<span class="pill">'+esc(state.user.username)+'</span> '+(adminPage?(state.user.is_primary_admin?'<button id="addCages" class="secondary">หน้าเพิ่มกรง</button>':'')+'<button id="addUsers" class="secondary">เพิ่มคน</button>':'<button id="myTotal" class="secondary">ยอดกรงที่ทุกคนส่ง</button>')+' <button id="logout" class="secondary">ออกจากระบบ</button>';
   document.querySelector('#logout').onclick=async()=>{await api('auth/logout',{method:'POST'});state.user=null;location.replace('index.php')};
   if(adminPage){
-    document.querySelector('#addCages').onclick=adminAddPage;
+    if(document.querySelector('#addCages'))document.querySelector('#addCages').onclick=adminAddPage;
     document.querySelector('#addUsers').onclick=adminUsersPage;
     adminView();
   }else{
@@ -347,7 +366,7 @@ function bindLoginRedirect(expectedRole){
         state.user=null;
         throw new Error(expectedRole==='ADMIN'?'บัญชีนี้ไม่ใช่ ADMIN':'บัญชี ADMIN กรุณาเข้าสู่ระบบที่หน้า ADMIN');
       }
-      location.replace(result.user.is_primary_admin?'admin.php':'user.php');
+      location.replace(result.user.role==='ADMIN'?'admin.php':'user.php');
     }catch(error){
       document.querySelector('#msg').innerHTML='<p class="error">'+esc(error.message)+'</p>';
     }
@@ -375,9 +394,9 @@ async function routeStart(){
     return;
   }
 
-  const pageAllowed=pageRole==='ADMIN' ? state.user.is_primary_admin : state.user.uses_user_view;
+  const pageAllowed=pageRole==='ADMIN' ? state.user.role==='ADMIN' : state.user.uses_user_view;
   if(!pageAllowed){
-    location.replace(state.user.is_primary_admin?'admin.php':'user.php');
+    location.replace(state.user.role==='ADMIN'?'admin.php':'user.php');
     return;
   }
 

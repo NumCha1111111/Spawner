@@ -251,8 +251,7 @@ function isPrimaryAdmin(array $user): bool
 
 function usesUserView(array $user): bool
 {
-    return ($user['role'] ?? '') === 'USER'
-        || (($user['role'] ?? '') === 'ADMIN' && !isPrimaryAdmin($user));
+    return ($user['role'] ?? '') === 'USER';
 }
 
 function canViewRiskDashboard(array $user): bool
@@ -279,7 +278,14 @@ function requireUser(): array
 function requireAdmin(): array
 {
     $user = requireUser();
-    if (!isPrimaryAdmin($user)) respond(['error' => 'ไม่มีสิทธิ์ดำเนินการ'], 403);
+    if (($user['role'] ?? '') !== 'ADMIN') respond(['error' => 'ไม่มีสิทธิ์ดำเนินการ'], 403);
+    return $user;
+}
+
+function requirePrimaryAdmin(): array
+{
+    $user = requireAdmin();
+    if (!isPrimaryAdmin($user)) respond(['error' => 'สิทธิ์นี้สงวนไว้สำหรับผู้ดูแลระบบหลัก'], 403);
     return $user;
 }
 

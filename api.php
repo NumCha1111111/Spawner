@@ -213,7 +213,12 @@ if ($route === 'cages/transactions' && $method === 'POST') {
 }
 
 if ($route === 'admin/users' && $method === 'GET') {
-    requireAdmin();
+    $admin = requireAdmin();
+    if (!isPrimaryAdmin($admin)) {
+        $users = $pdo->query("SELECT id, username, role, created_at
+            FROM users WHERE role = 'USER' ORDER BY created_at DESC")->fetchAll();
+        respond(['users' => $users]);
+    }
     $users = $pdo->query("SELECT u.id, u.username, u.role, u.created_at, u.last_login_at,
         COALESCE(ts.score, 80) trust_score, COUNT(t.id) transactions
         FROM users u LEFT JOIN trust_scores ts ON ts.user_id = u.id
@@ -224,7 +229,7 @@ if ($route === 'admin/users' && $method === 'GET') {
 }
 
 if ($route === 'admin/user-inventories' && $method === 'GET') {
-    requireAdmin();
+    requirePrimaryAdmin();
     $stmt = $pdo->prepare("SELECT u.id user_id, u.username, u.role, c.cage_type, b.quantity
         FROM users u
         LEFT JOIN cage_balances b ON b.user_id = u.id AND b.quantity > 0
@@ -295,15 +300,18 @@ if ($route === 'admin/overview' && $method === 'GET') {
 }
 
 if ($route === 'admin/pending-reviews' && $method === 'GET') {
-    requireAdmin();
+    $admin = requireAdmin();
     $riskAggregateSql = databaseDriver() === 'pgsql'
         ? "SELECT transaction_id, STRING_AGG(rule_code || ': ' || details, ' | ') risk_reasons FROM risk_events GROUP BY transaction_id"
         : "SELECT transaction_id, GROUP_CONCAT(rule_code || ': ' || details, ' | ') risk_reasons FROM risk_events GROUP BY transaction_id";
-    $stmt = $pdo->query("SELECT t.id, t.transaction_id, t.batch_id, u.username, c.cage_type, t.quantity, t.action, t.risk_score,
+    $stmt = $pdo->prepare("SELECT t.id, t.transaction_id, t.batch_id, u.username, c.cage_type, t.quantity, t.action, t.risk_score,
         t.risk_level, t.trust_score, t.status, t.reason, t.created_at, r.risk_reasons
         FROM cage_transactions t JOIN users u ON u.id = t.user_id JOIN cages c ON c.id = t.cage_id
         LEFT JOIN ($riskAggregateSql) r ON r.transaction_id = t.transaction_id
-        WHERE t.status IN ('PENDING_REVIEW', 'BLOCKED') ORDER BY t.risk_score DESC, t.id DESC LIMIT 200");
+        WHERE t.status IN ('PENDING_REVIEW', 'BLOCKED')
+            AND (? = '1' OR u.username <> ?)
+        ORDER BY t.risk_score DESC, t.id DESC LIMIT 200");
+    $stmt->execute([isPrimaryAdmin($admin) ? '1' : '0', primaryAdminUsername()]);
     $groups = [];
     foreach ($stmt->fetchAll() as $row) {
         $groupId = $row['batch_id'] ?: $row['transaction_id'];
@@ -337,6 +345,9 @@ if ($route === 'admin/pending-reviews' && $method === 'GET') {
     foreach ($groups as &$group) {
         $group['item_count'] = count($group['items']);
         $group['risk_reasons'] = implode(' | ', array_unique($group['risk_reasons']));
+        if (!isPrimaryAdmin($admin)) {
+            unset($group['trust_score'], $group['risk_score'], $group['risk_level'], $group['risk_reasons']);
+        }
     }
     unset($group);
     respond(['items' => array_values($groups)]);
@@ -346,9 +357,13 @@ if (preg_match('#^admin/review-batches/([a-f0-9]{24})/(approve|reject)$#', $rout
     $admin = requireAdmin();
     $groupId = $match[1];
     $newStatus = $match[2] === 'approve' ? 'APPROVED' : 'REJECTED';
-    $stmt = $pdo->prepare("SELECT * FROM cage_transactions
-        WHERE COALESCE(batch_id, transaction_id) = ? AND status IN ('PENDING_REVIEW', 'BLOCKED') ORDER BY id");
-    $stmt->execute([$groupId]);
+    $stmt = $pdo->prepare("SELECT t.* FROM cage_transactions t
+        JOIN users u ON u.id = t.user_id
+        WHERE COALESCE(t.batch_id, t.transaction_id) = ?
+            AND t.status IN ('PENDING_REVIEW', 'BLOCKED')
+            AND (? = '1' OR u.username <> ?)
+        ORDER BY t.id");
+    $stmt->execute([$groupId, isPrimaryAdmin($admin) ? '1' : '0', primaryAdminUsername()]);
     $transactions = $stmt->fetchAll();
     if (!$transactions) respond(['error' => 'ไม่พบชุดรายการที่รอการตรวจสอบ'], 404);
     $pdo->beginTransaction();
@@ -398,8 +413,10 @@ if (preg_match('#^admin/reviews/(\d+)/(approve|reject)$#', $route, $match) && $m
     $newStatus = $match[2] === 'approve' ? 'APPROVED' : 'REJECTED';
     $pdo->beginTransaction();
     try {
-        $stmt = $pdo->prepare('SELECT * FROM cage_transactions WHERE id = ?');
-        $stmt->execute([$id]);
+        $stmt = $pdo->prepare("SELECT t.* FROM cage_transactions t
+            JOIN users u ON u.id = t.user_id
+            WHERE t.id = ? AND (? = '1' OR u.username <> ?)");
+        $stmt->execute([$id, isPrimaryAdmin($admin) ? '1' : '0', primaryAdminUsername()]);
         $tx = $stmt->fetch();
         if (!$tx || !in_array($tx['status'], ['PENDING_REVIEW', 'BLOCKED'], true)) throw new RuntimeException('รายการนี้ตรวจไปแล้วหรือไม่พบข้อมูล');
         if ($newStatus === 'APPROVED') {
@@ -432,7 +449,7 @@ if (preg_match('#^admin/reviews/(\d+)/(approve|reject)$#', $route, $match) && $m
 }
 
 if (preg_match('#^admin/transactions/(\d+)/reverse$#', $route, $match) && $method === 'POST') {
-    $admin = requireAdmin();
+    $admin = requirePrimaryAdmin();
     $stmt = $pdo->prepare('SELECT * FROM cage_transactions WHERE id = ? AND status IN (\'APPROVED\', \'FLAGGED\')');
     $stmt->execute([(int) $match[1]]);
     $tx = $stmt->fetch();
