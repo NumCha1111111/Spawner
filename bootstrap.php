@@ -48,6 +48,9 @@ function db(): PDO
 {
     static $pdo;
     if (!$pdo) {
+        $initializeDatabase = databaseDriver() === 'pgsql'
+            ? getenv('APP_BOOTSTRAP_DATABASE') === '1'
+            : !is_file(DB_FILE);
         if (databaseDriver() === 'pgsql') {
             [$dsn, $username, $password] = postgresDsn((string) getenv(DATABASE_URL_ENV));
         } else {
@@ -61,12 +64,14 @@ function db(): PDO
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
         if (databaseDriver() === 'sqlite') $pdo->exec('PRAGMA foreign_keys = ON');
-        $schemaFile = databaseDriver() === 'pgsql' ? 'schema.pgsql.sql' : 'schema.sql';
-        $schema = file_get_contents(__DIR__ . '/' . $schemaFile);
-        if ($schema === false) throw new RuntimeException('Database schema is unavailable');
-        $pdo->exec($schema);
-        ensureSchemaMigrations($pdo);
-        seedUsers($pdo);
+        if ($initializeDatabase) {
+            $schemaFile = databaseDriver() === 'pgsql' ? 'schema.pgsql.sql' : 'schema.sql';
+            $schema = file_get_contents(__DIR__ . '/' . $schemaFile);
+            if ($schema === false) throw new RuntimeException('Database schema is unavailable');
+            $pdo->exec($schema);
+            ensureSchemaMigrations($pdo);
+            seedUsers($pdo);
+        }
     }
     return $pdo;
 }
@@ -164,8 +169,10 @@ function ensureSchemaMigrations(PDO $pdo): void
           AND current.status IN ('PENDING_REVIEW', 'BLOCKED')");
 }
 
-final class DatabaseSessionHandler implements SessionHandlerInterface
+final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUpdateTimestampHandlerInterface
 {
+    private array $knownExpiry = [];
+
     public function __construct(private PDO $pdo) {}
 
     public function open(string $path, string $name): bool { return true; }
@@ -173,10 +180,12 @@ final class DatabaseSessionHandler implements SessionHandlerInterface
 
     public function read(string $id): string|false
     {
-        $stmt = $this->pdo->prepare('SELECT data FROM app_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP');
+        $stmt = $this->pdo->prepare('SELECT data, expires_at FROM app_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP');
         $stmt->execute([$id]);
-        $data = $stmt->fetchColumn();
-        return $data === false ? '' : (string) $data;
+        $row = $stmt->fetch();
+        if ($row === false) return '';
+        $this->knownExpiry[$id] = strtotime((string) $row['expires_at']) ?: 0;
+        return (string) $row['data'];
     }
 
     public function write(string $id, string $data): bool
@@ -197,6 +206,26 @@ final class DatabaseSessionHandler implements SessionHandlerInterface
         $stmt = $this->pdo->prepare('DELETE FROM app_sessions WHERE expires_at <= CURRENT_TIMESTAMP');
         $stmt->execute();
         return $stmt->rowCount();
+    }
+
+    public function validateId(string $id): bool
+    {
+        $stmt = $this->pdo->prepare('SELECT 1 FROM app_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP');
+        $stmt->execute([$id]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    public function updateTimestamp(string $id, string $data): bool
+    {
+        $lifetime = max(60, (int) ini_get('session.gc_maxlifetime'));
+        $refreshWindow = min(300, max(60, intdiv($lifetime, 4)));
+        if (($this->knownExpiry[$id] ?? 0) > time() + $refreshWindow) return true;
+
+        $expiresAt = gmdate('Y-m-d H:i:sP', time() + $lifetime);
+        $stmt = $this->pdo->prepare('UPDATE app_sessions SET expires_at = ? WHERE id = ?');
+        $ok = $stmt->execute([$expiresAt, $id]);
+        if ($ok && $stmt->rowCount() > 0) return true;
+        return $this->write($id, $data);
     }
 }
 
