@@ -277,20 +277,87 @@ if ($route === 'admin/user-inventories' && $method === 'GET') {
     respond(['users' => array_values($users)]);
 }
 
+function submissionHistoryFilter(): array
+{
+    $where = ["t.action IN ('ADD', 'REMOVE')"];
+    $params = [];
+    $username = trim((string) ($_GET['username'] ?? ''));
+    if ($username !== '') {
+        $where[] = "LOWER(u.username) LIKE ? ESCAPE '\\'";
+        $search = strtr(mb_strtolower(mb_substr($username, 0, 80)), ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']);
+        $params[] = '%' . $search . '%';
+    }
+    $action = strtoupper((string) ($_GET['action'] ?? ''));
+    if (in_array($action, ['ADD', 'REMOVE'], true)) {
+        $where[] = 't.action = ?';
+        $params[] = $action;
+    }
+    $allowedStatuses = ['APPROVED', 'FLAGGED', 'PENDING_REVIEW', 'BLOCKED', 'REJECTED'];
+    $status = strtoupper((string) ($_GET['status'] ?? ''));
+    if (in_array($status, $allowedStatuses, true)) {
+        $where[] = 't.status = ?';
+        $params[] = $status;
+    }
+    $dateFrom = (string) ($_GET['date_from'] ?? '');
+    $from = DateTimeImmutable::createFromFormat('!Y-m-d', $dateFrom);
+    if ($from && $from->format('Y-m-d') === $dateFrom) {
+        $where[] = 't.created_at >= ?';
+        $params[] = $dateFrom . ' 00:00:00';
+    }
+    $dateTo = (string) ($_GET['date_to'] ?? '');
+    $to = DateTimeImmutable::createFromFormat('!Y-m-d', $dateTo);
+    if ($to && $to->format('Y-m-d') === $dateTo) {
+        $where[] = 't.created_at < ?';
+        $params[] = $to->modify('+1 day')->format('Y-m-d 00:00:00');
+    }
+    return ['sql' => implode(' AND ', $where), 'params' => $params];
+}
+
+if ($route === 'admin/submission-history/export' && $method === 'GET') {
+    requirePrimaryAdmin();
+    $filter = submissionHistoryFilter();
+    $groupExpression = 'COALESCE(t.batch_id, t.transaction_id)';
+    $stmt = $pdo->prepare("SELECT $groupExpression group_id, t.created_at, u.username, t.action,
+        c.cage_type, t.quantity, t.status
+        FROM cage_transactions t
+        JOIN users u ON u.id = t.user_id
+        JOIN cages c ON c.id = t.cage_id
+        WHERE {$filter['sql']}
+        ORDER BY t.id DESC");
+    $stmt->execute($filter['params']);
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="submission-history-' . gmdate('Y-m-d') . '.csv"');
+    echo "\xEF\xBB\xBF";
+    $output = fopen('php://output', 'wb');
+    if ($output === false) throw new RuntimeException('Unable to create CSV output');
+    fputcsv($output, ['รหัสรอบ', 'เวลา', 'ชื่อผู้ใช้', 'ประเภท', 'ชนิดกรง', 'จำนวน', 'สถานะ']);
+    $csvSafe = static function (mixed $value): mixed {
+        if (!is_string($value)) return $value;
+        return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
+    };
+    while ($row = $stmt->fetch()) {
+        $row['created_at'] = preg_replace('/\+00(?::?00)?$/', '', (string) $row['created_at']);
+        fputcsv($output, array_map($csvSafe, $row));
+    }
+    fclose($output);
+    exit;
+}
+
 if (preg_match('#^admin/submission-history(?:/(\d+))?$#', $route, $submissionHistoryMatch) && $method === 'GET') {
     requirePrimaryAdmin();
     $page = max(1, (int) ($submissionHistoryMatch[1] ?? 1));
     $perPage = 10;
     $offset = ($page - 1) * $perPage;
     $groupExpression = 'COALESCE(t.batch_id, t.transaction_id)';
+    $filter = submissionHistoryFilter();
     $stmt = $pdo->prepare("SELECT $groupExpression group_id, MAX(t.id) last_id, MAX(t.created_at) created_at,
         u.username, t.action, SUM(t.quantity) total_quantity, COUNT(*) item_count
         FROM cage_transactions t
         JOIN users u ON u.id = t.user_id
-        WHERE t.action IN ('ADD', 'REMOVE')
+        WHERE {$filter['sql']}
         GROUP BY $groupExpression, u.id, u.username, t.action
         ORDER BY MAX(t.id) DESC LIMIT ? OFFSET ?");
-    $stmt->execute([$perPage + 1, $offset]);
+    $stmt->execute([...$filter['params'], $perPage + 1, $offset]);
     $groups = $stmt->fetchAll();
     $hasNext = count($groups) > $perPage;
     if ($hasNext) array_pop($groups);
@@ -302,9 +369,10 @@ if (preg_match('#^admin/submission-history(?:/(\d+))?$#', $route, $submissionHis
             t.reason, t.created_at, t.reviewed_at
             FROM cage_transactions t
             JOIN cages c ON c.id = t.cage_id
-            WHERE $groupExpression IN ($placeholders) AND t.action IN ('ADD', 'REMOVE')
+            JOIN users u ON u.id = t.user_id
+            WHERE $groupExpression IN ($placeholders) AND {$filter['sql']}
             ORDER BY t.id");
-        $detailStmt->execute($groupIds);
+        $detailStmt->execute([...$groupIds, ...$filter['params']]);
         $details = [];
         foreach ($detailStmt->fetchAll() as $row) {
             $details[$row['group_id']][] = [
