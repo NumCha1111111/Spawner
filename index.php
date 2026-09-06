@@ -6,7 +6,7 @@ require_once __DIR__ . '/bootstrap.php';
 if (!defined('PAGE_ROLE')) {
     $signedInUser = currentUser();
     if ($signedInUser !== null) {
-        header('Location: ' . ($signedInUser['role'] === 'ADMIN' ? 'admin.php' : 'user.php'));
+        header('Location: ' . (isPrimaryAdmin($signedInUser) ? 'admin.php' : 'user.php'));
         exit;
     }
 
@@ -148,14 +148,6 @@ th{font-size:9px;letter-spacing:.1em}
 .user-inventory-empty{margin-top:18px;padding:28px 18px;border:1px dashed #c7d8ce;border-radius:4px;background:var(--surface);color:var(--muted);font-size:12px;text-align:center}
 .user-inventory-loading{margin-top:18px;padding:26px 18px;color:var(--muted);font-size:12px;text-align:center}
 .user-inventory-loading:before{content:"";display:inline-block;width:13px;height:13px;margin-right:8px;border:2px solid #c8d7ce;border-top-color:var(--green);border-radius:50%;vertical-align:-2px;animation:inventory-spin .7s linear infinite}
-.restricted-inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
-.restricted-inventory-card{min-width:0;padding:15px;border:1px solid var(--line);border-radius:5px;background:var(--surface)}
-.restricted-inventory-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
-.restricted-inventory-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.restricted-inventory-head span{color:var(--green-dark);font-size:12px;font-weight:800;white-space:nowrap}
-.restricted-inventory-items{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
-.restricted-inventory-item{padding:5px 7px;border:1px solid #d7e0d7;border-radius:3px;background:#fff;color:var(--muted);font-size:11px}
-.restricted-inventory-item b{color:var(--ink);font-variant-numeric:tabular-nums}
 @keyframes inventory-spin{to{transform:rotate(360deg)}}
 .inventory-table th:first-child,.inventory-table td:first-child{width:44px;text-align:center}
 .inventory-table th:last-child,.inventory-table td:last-child{width:132px;text-align:right}
@@ -271,7 +263,6 @@ input[type="number"]{font-size:15px;font-weight:750;letter-spacing:.015em;text-a
   .user-inventory-table th:first-child,.user-inventory-table td:first-child{width:auto}
   .user-inventory-table th:last-child,.user-inventory-table td:last-child{width:76px}
   .user-inventory-card{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;padding:13px 12px}
-  .restricted-inventory-grid{grid-template-columns:1fr}
   .user-inventory-total{min-width:0;margin-left:0;font-size:12px}
   .user-inventory-open{grid-column:1 / -1;width:100%;margin-top:5px}
   .user-inventory-detail-summary{padding:12px}
@@ -282,10 +273,10 @@ input[type="number"]{font-size:15px;font-weight:750;letter-spacing:.015em;text-a
 <script>
   const api=async(path,options={})=>{const headers={'Content-Type':'application/json',...(options.headers||{})};if(state.csrfToken)headers['X-CSRF-Token']=state.csrfToken;const r=await fetch('api.php?route='+encodeURIComponent(path),{...options,headers});const d=await r.json();if(!r.ok)throw Error(d.error||'เกิดข้อผิดพลาด');return d};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const status=v=>v==='APPROVED'&&state.user?.role!=='ADMIN'?'':'<span class="badge '+esc(v)+'">'+esc(v)+'</span>';
+const status=v=>v==='APPROVED'&&state.user?.uses_user_view?'':'<span class="badge '+esc(v)+'">'+esc(v)+'</span>';
   let state={user:null,csrfToken:null};
   function decorateNumericTables(root=document){const quantitative=new Set(['จำนวน','จำนวนรวม','เพิ่มสะสม','ลดสะสม','ยอดสุทธิ','Trust','Transactions','รายการทั้งหมด','Risk','ความเสี่ยง']);root.querySelectorAll('table:not([data-numeric-decorated])').forEach(table=>{table.dataset.numericDecorated='1';table.classList.add('numeric-ledger');const headers=[...table.querySelectorAll('thead th')];headers.forEach((header,index)=>{const label=header.textContent.trim();const className=quantitative.has(label)?'numeric-column':label==='เวลา'?'temporal-column':'';if(!className)return;header.classList.add(className);table.querySelectorAll('tbody tr').forEach(row=>row.children[index]?.classList.add(className))})})}
-  function decorateContributors(){decorateNumericTables();document.querySelectorAll('#content .eyebrow').forEach(label=>{if(label.textContent.trim()==='All users inventory')label.textContent='กรงรวมที่ทุกคนส่ง'});document.querySelectorAll('#content select[name="action"]').forEach(select=>{const paint=()=>{const removing=select.value==='REMOVE';select.classList.toggle('action-add',!removing);select.classList.toggle('action-remove',removing);select.closest('form')?.querySelector('button.primary')?.classList.toggle('withdraw-submit',removing)};paint();if(!select.dataset.colorBound){select.dataset.colorBound='1';select.addEventListener('change',paint)}});document.querySelectorAll('#content table').forEach(table=>{const headers=[...table.querySelectorAll('thead th')];const amountIndex=headers.findIndex(header=>header.textContent.trim()==='จำนวน');if(amountIndex>=0)table.querySelectorAll('tbody tr').forEach(row=>{const cell=row.children[amountIndex];if(!cell)return;const value=cell.textContent.trim();cell.classList.toggle('quantity-add',value.startsWith('ADD'));cell.classList.toggle('quantity-remove',value.startsWith('REMOVE'))})});if(state.user?.role==='ADMIN')return;document.querySelectorAll('#content table').forEach(table=>{const headers=[...table.querySelectorAll('thead th')];if(!headers.some(header=>header.textContent.trim()==='ผู้ทำรายการ'))return;const statusIndex=headers.findIndex(header=>header.textContent.trim()==='สถานะ');if(statusIndex<0)return;headers[statusIndex].style.display='none';table.querySelectorAll('tbody tr').forEach(row=>{if(row.children[statusIndex])row.children[statusIndex].style.display='none'})})}
+  function decorateContributors(){decorateNumericTables();document.querySelectorAll('#content .eyebrow').forEach(label=>{if(label.textContent.trim()==='All users inventory')label.textContent='กรงรวมที่ทุกคนส่ง'});document.querySelectorAll('#content select[name="action"]').forEach(select=>{const paint=()=>{const removing=select.value==='REMOVE';select.classList.toggle('action-add',!removing);select.classList.toggle('action-remove',removing);select.closest('form')?.querySelector('button.primary')?.classList.toggle('withdraw-submit',removing)};paint();if(!select.dataset.colorBound){select.dataset.colorBound='1';select.addEventListener('change',paint)}});document.querySelectorAll('#content table').forEach(table=>{const headers=[...table.querySelectorAll('thead th')];const amountIndex=headers.findIndex(header=>header.textContent.trim()==='จำนวน');if(amountIndex>=0)table.querySelectorAll('tbody tr').forEach(row=>{const cell=row.children[amountIndex];if(!cell)return;const value=cell.textContent.trim();cell.classList.toggle('quantity-add',value.startsWith('ADD'));cell.classList.toggle('quantity-remove',value.startsWith('REMOVE'))})});if(pageRole==='ADMIN')return;document.querySelectorAll('#content table').forEach(table=>{const headers=[...table.querySelectorAll('thead th')];if(!headers.some(header=>header.textContent.trim()==='ผู้ทำรายการ'))return;const statusIndex=headers.findIndex(header=>header.textContent.trim()==='สถานะ');if(statusIndex<0)return;headers[statusIndex].style.display='none';table.querySelectorAll('tbody tr').forEach(row=>{if(row.children[statusIndex])row.children[statusIndex].style.display='none'})})}
   function layout(content){document.querySelector('#app').innerHTML='<header class="topbar"><div class="brand">BEACON TEAM<small>Minecraft inventory control</small></div><div id="account"></div></header>'+content;const contentNode=document.querySelector('#content');if(contentNode)new MutationObserver(decorateContributors).observe(contentNode,{childList:true,subtree:true});}
   async function start(){try{const result=await api('auth/me');state.user=result.user;state.csrfToken=result.csrf_token}catch(e){}state.user?renderApp():renderLogin()}
   function renderLogin(){layout('<section class="panel login"><div class="eyebrow">Internal access</div><h1>เข้าสู่ระบบ</h1><p class="metric">ผู้ใช้ทั่วไปกรอกเฉพาะชื่อ ส่วนผู้ดูแลระบบต้องกรอกรหัสผ่าน</p><form id="login"><label>ชื่อผู้ใช้</label><input name="username" maxlength="80" required autofocus autocomplete="username"><label>รหัสผ่าน (เฉพาะ ADMIN)</label><input name="password" type="password" inputmode="numeric" autocomplete="current-password"><button class="primary" style="margin-top:18px;width:100%">เข้าสู่ระบบ</button><div id="msg"></div></form></section>');document.querySelector('#login').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{const result=await api('auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});state.user=result.user;state.csrfToken=result.csrf_token;renderApp()}catch(x){document.querySelector('#msg').innerHTML='<p class="error">'+esc(x.message)+'</p>'}}}
@@ -309,29 +300,27 @@ async function adminView(){
 function openReviewBatch(groupId){const group=state.reviewGroups?.[groupId];if(!group)return;const modal=document.createElement('div');modal.className='modal-backdrop';modal.innerHTML='<section class="modal batch-modal" role="dialog" aria-modal="true" aria-labelledby="batchTitle"><div class="modal-head"><div><div class="eyebrow">รายละเอียดชุดคำขอ</div><h2 id="batchTitle">'+esc(group.username)+' · '+esc(group.action)+'</h2></div><button type="button" class="secondary" id="closeBatch">ปิด</button></div><div class="inventory-total"><strong>'+esc(group.total_quantity)+'</strong><span>กรงรวมทั้งหมด<br>'+esc(group.item_count)+' ชนิดในชุดนี้</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>ชนิดกรง</th><th>จำนวน</th></tr></thead><tbody>'+group.items.map((item,index)=>'<tr><td>'+Number(index+1)+'</td><td>'+esc(item.cage_type)+'</td><td><strong class="'+(item.action==='ADD'?'quantity-add':'quantity-remove')+'">'+esc(item.quantity)+'</strong></td></tr>').join('')+'</tbody></table></div><div class="actions modal-actions" style="margin-top:16px"><button class="secondary" id="approveBatch">อนุมัติทั้งชุด</button><button class="danger" id="rejectBatch">ปฏิเสธทั้งชุด</button></div></section>';document.body.appendChild(modal);const close=()=>modal.remove();modal.querySelector('#closeBatch').onclick=close;modal.onclick=event=>{if(event.target===modal)close()};modal.querySelector('#approveBatch').onclick=()=>{close();reviewBatch(groupId,'approve')};modal.querySelector('#rejectBatch').onclick=()=>{close();reviewBatch(groupId,'reject')}}
 async function reviewBatch(groupId,action){try{await api('admin/review-batches/'+groupId+'/'+action,{method:'POST'});adminView()}catch(error){alert(error.message)}}
 async function openAdminUserInventories(){const opener=document.activeElement;const modal=document.createElement('div');modal.className='modal-backdrop';modal.innerHTML='<section class="modal user-inventory-modal" role="dialog" aria-modal="true" aria-labelledby="userInventoryTitle"><div class="modal-head"><div><div class="eyebrow">ADMIN VIEW</div><h2 id="userInventoryTitle">กรงของแต่ละคนที่ส่งมา</h2></div><button type="button" class="secondary" data-close-user-inventories>ปิด</button></div><div class="user-inventory-view"><div class="user-inventory-loading" role="status">กำลังโหลดรายชื่อผู้ใช้</div></div></section>';document.body.appendChild(modal);const view=modal.querySelector('.user-inventory-view');const title=modal.querySelector('#userInventoryTitle');const close=()=>{modal.remove();opener?.focus?.()};const showList=users=>{title.textContent='กรงของแต่ละคนที่ส่งมา';const rows=users.map((user,index)=>'<section class="user-inventory-card"><h3 class="user-inventory-name" title="'+esc(user.username)+'">'+esc(user.username)+'</h3><span class="user-inventory-total">รวม '+esc(user.total_quantity)+' กรง</span><button type="button" class="secondary user-inventory-open" data-user-index="'+index+'">ดูรายการ</button></section>').join('');view.innerHTML=rows?'<div class="user-inventory-list">'+rows+'</div>':'<div class="user-inventory-empty">ยังไม่มีผู้ใช้ในระบบ</div>';view.querySelectorAll('[data-user-index]').forEach(button=>button.onclick=()=>showDetail(users[Number(button.dataset.userIndex)]))};const showDetail=user=>{title.textContent=user.username;const items=Array.isArray(user.items)?user.items:[];const rows=items.map(item=>'<tr><td>'+esc(item.cage_type)+'</td><td><strong>'+esc(item.quantity)+'</strong></td></tr>').join('');view.innerHTML='<div class="user-inventory-detail-summary"><span>ยอดกรงที่ผ่านการอนุมัติ</span><strong>'+esc(user.total_quantity)+' กรง</strong></div>'+(rows?'<div class="table-wrap user-inventory-table-wrap"><table class="user-inventory-table"><thead><tr><th>ชนิดกรง</th><th>จำนวน</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="user-inventory-empty">ผู้ใช้นี้ยังไม่มีกรงที่ผ่านการอนุมัติ</div>')+'<div class="actions" style="margin-top:16px"><button type="button" class="secondary" data-back-user-list>← กลับไปรายชื่อผู้ใช้</button></div>';view.querySelector('[data-back-user-list]').onclick=()=>showList(result.users)};modal.querySelector('[data-close-user-inventories]').onclick=close;modal.onclick=event=>{if(event.target===modal)close()};modal.onkeydown=event=>{if(event.key==='Escape')close()};modal.querySelector('[data-close-user-inventories]').focus();let result;try{result=await api('admin/user-inventories');result.users=Array.isArray(result.users)?result.users:[];showList(result.users)}catch(error){view.innerHTML='<div class="user-inventory-empty"><strong>โหลดข้อมูลไม่สำเร็จ</strong><br>'+esc(error.message)+'</div>'}}
-function decorateAccount(){const account=document.querySelector('#account');if(!account||account.dataset.decorated)return;const pill=account.querySelector('.pill');if(!pill)return;const name=(state.user&&state.user.username)||pill.textContent.split('·')[0].trim();const role=(state.user&&state.user.role)||'';account.dataset.decorated='1';pill.className='account-user';pill.textContent=name;if(role==='ADMIN')document.querySelector('.hero')?.remove();account.querySelectorAll('button').forEach(button=>button.classList.add('logout-button'));const myTotal=account.querySelector('#myTotal');if(myTotal)myTotal.textContent='กรงของแต่ละคนที่ส่งมา';if(role==='ADMIN'&&!account.querySelector('#allUserInventories')){const button=document.createElement('button');button.id='allUserInventories';button.className='secondary';button.textContent='กรงของแต่ละคน';button.onclick=openAdminUserInventories;const logout=account.querySelector('#logout');account.insertBefore(button,logout)}}
+function decorateAccount(){const account=document.querySelector('#account');if(!account||account.dataset.decorated)return;const pill=account.querySelector('.pill');if(!pill)return;const name=(state.user&&state.user.username)||pill.textContent.split('·')[0].trim();account.dataset.decorated='1';pill.className='account-user';pill.textContent=name;if(pageRole==='ADMIN')document.querySelector('.hero')?.remove();account.querySelectorAll('button').forEach(button=>button.classList.add('logout-button'));const myTotal=account.querySelector('#myTotal');if(myTotal)myTotal.textContent='กรงของแต่ละคนที่ส่งมา';if(pageRole==='ADMIN'&&!account.querySelector('#allUserInventories')){const button=document.createElement('button');button.id='allUserInventories';button.className='secondary';button.textContent='กรงของแต่ละคน';button.onclick=openAdminUserInventories;const logout=account.querySelector('#logout');account.insertBefore(button,logout)}}
 function adjustHistoryTime(){document.querySelectorAll('#content table').forEach(table=>{if(table.dataset.timeAdjusted)return;const headers=[...table.querySelectorAll('thead th')];if(!headers.some(header=>header.textContent.trim()==='ผู้ทำรายการ'))return;table.dataset.timeAdjusted='1';headers[0].textContent='เวลา';headers[0].style.width='28%'})}
 new MutationObserver(adjustHistoryTime).observe(document.body,{childList:true,subtree:true});
 new MutationObserver(()=>{decorateNumericTables();const account=document.querySelector('#account');if(account&&account.dataset.decorated!=='1')decorateAccount()}).observe(document.body,{childList:true,subtree:true});
 
-const renderFullAdminView=adminView;
-adminView=async function(){
-  await renderFullAdminView();
-  if(state.user?.can_view_risk_dashboard!==false)return;
-  document.querySelector('#content > .stat-grid')?.remove();
-  document.querySelectorAll('#content > section.panel').forEach(panel=>{
-    if(panel.querySelector('.eyebrow')?.textContent.trim()==='Trust watchlist')panel.remove();
-  });
-  const result=await api('admin/user-inventories');
-  const users=Array.isArray(result.users)?result.users:[];
-  const cards=users.map(user=>'<article class="restricted-inventory-card"><div class="restricted-inventory-head"><strong title="'+esc(user.username)+'">'+esc(user.username)+'</strong><span>รวม '+esc(user.total_quantity)+' กรง</span></div><div class="restricted-inventory-items">'+(user.items.length?user.items.map(item=>'<span class="restricted-inventory-item">'+esc(item.cage_type)+' <b>'+esc(item.quantity)+'</b></span>').join(''):'<span class="metric">ยังไม่มีกรงที่ผ่านการอนุมัติ</span>')+'</div></article>').join('');
-  const inventory=document.createElement('section');
-  inventory.className='panel restricted-inventory-panel';
-  inventory.innerHTML='<div class="eyebrow">User inventory</div><h2>รายชื่อและกรงของแต่ละคน</h2>'+(cards?'<div class="restricted-inventory-grid">'+cards+'</div>':'<div class="empty-state">ยังไม่มีผู้ใช้ในระบบ</div>');
-  document.querySelector('#content')?.prepend(inventory);
-};
-
 const pageRole=<?= json_encode(PAGE_ROLE, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+
+renderApp=async function(){
+  const adminPage=pageRole==='ADMIN';
+  layout('<section class="hero"><div class="eyebrow">'+(adminPage?'Operations console':'Shared inventory')+'</div><h1>'+(adminPage?'ดูเฉพาะสิ่งที่ผิดปกติ':'จำนวนกรงที่ทุกคนส่ง อยู่ในที่เดียว')+'</h1><p>'+(adminPage?'รายการปกติจะผ่านอัตโนมัติ หน้านี้จะแสดงเฉพาะรายการที่ต้องใช้ดุลยพินิจ':'ยอดกรงหน้านี้รวมรายการที่ผ่านการอนุมัติของผู้ใช้ทุกคน')+'</p></section><div id="content"></div>');
+  document.querySelector('#account').innerHTML='<span class="pill">'+esc(state.user.username)+'</span> '+(adminPage?'<button id="addCages" class="secondary">หน้าเพิ่มกรง</button><button id="addUsers" class="secondary">เพิ่มคน</button>':'<button id="myTotal" class="secondary">ยอดกรงที่ทุกคนส่ง</button>')+' <button id="logout" class="secondary">ออกจากระบบ</button>';
+  document.querySelector('#logout').onclick=async()=>{await api('auth/logout',{method:'POST'});state.user=null;location.replace('index.php')};
+  if(adminPage){
+    document.querySelector('#addCages').onclick=adminAddPage;
+    document.querySelector('#addUsers').onclick=adminUsersPage;
+    adminView();
+  }else{
+    document.querySelector('#myTotal').onclick=openMyTotal;
+    userView();
+  }
+};
 
 function renderUserLogin(){
   layout('<section class="panel login"><div class="eyebrow">USER ACCESS</div><h1>เข้าสู่ระบบผู้ใช้</h1><form id="login"><label>ชื่อผู้ใช้</label><input name="username" maxlength="80" required autofocus autocomplete="username"><button class="primary" style="margin-top:18px;width:100%">เข้าสู่ระบบ</button><div id="msg"></div></form></section>');
@@ -358,7 +347,7 @@ function bindLoginRedirect(expectedRole){
         state.user=null;
         throw new Error(expectedRole==='ADMIN'?'บัญชีนี้ไม่ใช่ ADMIN':'บัญชี ADMIN กรุณาเข้าสู่ระบบที่หน้า ADMIN');
       }
-      location.replace(result.user.role==='ADMIN'?'admin.php':'user.php');
+      location.replace(result.user.is_primary_admin?'admin.php':'user.php');
     }catch(error){
       document.querySelector('#msg').innerHTML='<p class="error">'+esc(error.message)+'</p>';
     }
@@ -386,8 +375,9 @@ async function routeStart(){
     return;
   }
 
-  if(state.user.role!==pageRole){
-    location.replace(state.user.role==='ADMIN'?'admin.php':'user.php');
+  const pageAllowed=pageRole==='ADMIN' ? state.user.is_primary_admin : state.user.uses_user_view;
+  if(!pageAllowed){
+    location.replace(state.user.is_primary_admin?'admin.php':'user.php');
     return;
   }
 

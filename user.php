@@ -9,7 +9,7 @@ if ($user === null) {
     exit;
 }
 
-if ($user['role'] !== 'USER') {
+if (!usesUserView($user)) {
     header('Location: admin.php');
     exit;
 }

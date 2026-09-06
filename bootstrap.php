@@ -236,18 +236,36 @@ function currentUser(): ?array
     return $stmt->fetch() ?: null;
 }
 
+function primaryAdminUsername(): string
+{
+    $username = base64_decode(INITIAL_ADMIN_USERNAME_ENCODED, true);
+    if (!is_string($username) || $username === '') throw new RuntimeException('Invalid primary administrator configuration');
+    return $username;
+}
+
+function isPrimaryAdmin(array $user): bool
+{
+    return ($user['role'] ?? '') === 'ADMIN'
+        && hash_equals(primaryAdminUsername(), (string) ($user['username'] ?? ''));
+}
+
+function usesUserView(array $user): bool
+{
+    return ($user['role'] ?? '') === 'USER'
+        || (($user['role'] ?? '') === 'ADMIN' && !isPrimaryAdmin($user));
+}
+
 function canViewRiskDashboard(array $user): bool
 {
-    if (($user['role'] ?? '') !== 'ADMIN') return false;
-    $restrictedUsername = base64_decode(SECOND_ADMIN_USERNAME_ENCODED, true);
-    return !is_string($restrictedUsername)
-        || !hash_equals($restrictedUsername, (string) ($user['username'] ?? ''));
+    return isPrimaryAdmin($user);
 }
 
 function sessionUser(?array $user): ?array
 {
     if ($user === null) return null;
     $user['can_view_risk_dashboard'] = canViewRiskDashboard($user);
+    $user['is_primary_admin'] = isPrimaryAdmin($user);
+    $user['uses_user_view'] = usesUserView($user);
     return $user;
 }
 
@@ -261,7 +279,7 @@ function requireUser(): array
 function requireAdmin(): array
 {
     $user = requireUser();
-    if ($user['role'] !== 'ADMIN') respond(['error' => 'ไม่มีสิทธิ์ดำเนินการ'], 403);
+    if (!isPrimaryAdmin($user)) respond(['error' => 'ไม่มีสิทธิ์ดำเนินการ'], 403);
     return $user;
 }
 

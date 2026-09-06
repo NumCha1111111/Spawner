@@ -75,10 +75,16 @@ if ($route === 'cages/balance' && $method === 'GET') {
 }
 
 if ($route === 'cages/global-balance' && $method === 'GET') {
-    requireUser();
-    $stmt = $pdo->query("SELECT c.id, c.cage_type, COALESCE(SUM(b.quantity), 0) quantity
-        FROM cages c LEFT JOIN cage_balances b ON b.cage_id = c.id
+    $viewer = requireUser();
+    $stmt = $pdo->prepare("SELECT c.id, c.cage_type, COALESCE(SUM(b.quantity), 0) quantity
+        FROM cages c
+        LEFT JOIN cage_balances b ON b.cage_id = c.id
+            AND (? = '1' OR NOT EXISTS (
+                SELECT 1 FROM users hidden_user
+                WHERE hidden_user.id = b.user_id AND hidden_user.username = ?
+            ))
         GROUP BY c.id, c.cage_type ORDER BY quantity DESC, c.cage_type");
+    $stmt->execute([isPrimaryAdmin($viewer) ? '1' : '0', primaryAdminUsername()]);
     $balances = $stmt->fetchAll();
     respond([
         'scope' => 'ALL_USERS',
@@ -101,9 +107,9 @@ if ($route === 'cages/global-history' && $method === 'GET') {
     $stmt = $pdo->prepare("SELECT t.id, t.transaction_id, u.username, c.cage_type, t.quantity, t.previous_quantity, t.new_quantity,
         t.action, t.risk_score, t.risk_level, t.trust_score, t.status, t.reason, t.created_at, t.reviewed_at
         FROM cage_transactions t JOIN cages c ON c.id = t.cage_id JOIN users u ON u.id = t.user_id
-        WHERE (? = 'ADMIN' OR t.status = 'APPROVED')
+        WHERE (? = '1' OR (t.status = 'APPROVED' AND u.username <> ?))
         ORDER BY t.id DESC LIMIT 200");
-    $stmt->execute([$viewer['role']]);
+    $stmt->execute([isPrimaryAdmin($viewer) ? '1' : '0', primaryAdminUsername()]);
     respond(['history' => $stmt->fetchAll()]);
 }
 
@@ -219,12 +225,14 @@ if ($route === 'admin/users' && $method === 'GET') {
 
 if ($route === 'admin/user-inventories' && $method === 'GET') {
     requireAdmin();
-    $rows = $pdo->query("SELECT u.id user_id, u.username, u.role, c.cage_type, b.quantity
+    $stmt = $pdo->prepare("SELECT u.id user_id, u.username, u.role, c.cage_type, b.quantity
         FROM users u
         LEFT JOIN cage_balances b ON b.user_id = u.id AND b.quantity > 0
         LEFT JOIN cages c ON c.id = b.cage_id
-        WHERE u.role = 'USER' OR b.user_id IS NOT NULL
-        ORDER BY u.username, b.quantity DESC, c.cage_type")->fetchAll();
+        WHERE (u.role = 'USER' OR b.user_id IS NOT NULL) AND u.username <> ?
+        ORDER BY u.username, b.quantity DESC, c.cage_type");
+    $stmt->execute([primaryAdminUsername()]);
+    $rows = $stmt->fetchAll();
     $users = [];
     foreach ($rows as $row) {
         $userId = (int) $row['user_id'];
