@@ -309,7 +309,14 @@ const pageRole=<?= json_encode(PAGE_ROLE, JSON_UNESCAPED_UNICODE | JSON_UNESCAPE
 
 const renderPrimaryAdminView=adminView;
 adminView=async function(){
-  if(state.user?.is_primary_admin)return renderPrimaryAdminView();
+  if(state.user?.is_primary_admin){
+    try{return await renderPrimaryAdminView()}
+    catch(error){
+      document.querySelector('#content').innerHTML='<section class="panel"><div class="eyebrow">DASHBOARD ERROR</div><h2>โหลดข้อมูล Dashboard ไม่สำเร็จ</h2><p class="error">'+esc(error.message)+'</p><button type="button" class="secondary" id="retryDashboard">ลองใหม่</button></section>';
+      document.querySelector('#retryDashboard').onclick=adminView;
+      return;
+    }
+  }
   const q=await api('admin/pending-reviews');
   state.reviewGroups=Object.fromEntries(q.items.map(group=>[group.group_id,group]));
   const rows=q.items.map(group=>'<tr><td data-label="ผู้ส่ง"><span class="review-user">'+esc(group.username)+'</span></td><td data-label="รายการ"><div class="packet-summary"><div><strong class="packet-amount '+(group.action==='ADD'?'quantity-add':'quantity-remove')+'">'+esc(group.action==='ADD'?'เพิ่ม':'ลบ')+' '+esc(group.total_quantity)+' กรง</strong><span class="packet-meta">'+esc(group.item_count)+' ชนิดในชุดนี้</span></div><button class="secondary details-button" onclick="openReviewBatch(\''+group.group_id+'\')">ดูรายการ</button></div></td><td data-label="จัดการ"><div class="actions review-actions"><button class="secondary" onclick="reviewBatch(\''+group.group_id+'\',\'approve\')">อนุมัติ</button><button class="danger" onclick="reviewBatch(\''+group.group_id+'\',\'reject\')">ปฏิเสธ</button></div></td></tr>').join('');

@@ -297,8 +297,8 @@ if ($route === 'admin/overview' && $method === 'GET') {
         FROM users u JOIN trust_scores ts ON ts.user_id = u.id LEFT JOIN cage_transactions t ON t.user_id = u.id
         WHERE u.role = 'USER' GROUP BY u.id, ts.score ORDER BY ts.score ASC LIMIT 10")->fetchAll();
     $recentRiskSql = databaseDriver() === 'pgsql'
-        ? "SELECT DATE(created_at) day, COUNT(*) count FROM risk_events WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '14 days' GROUP BY DATE(created_at) ORDER BY day"
-        : "SELECT DATE(created_at) day, COUNT(*) count FROM risk_events WHERE created_at >= datetime('now', '-14 days') GROUP BY DATE(created_at) ORDER BY day";
+        ? "SELECT DATE(created_at) AS event_day, COUNT(*) AS event_count FROM risk_events WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '14 days' GROUP BY DATE(created_at) ORDER BY event_day"
+        : "SELECT DATE(created_at) AS event_day, COUNT(*) AS event_count FROM risk_events WHERE created_at >= datetime('now', '-14 days') GROUP BY DATE(created_at) ORDER BY event_day";
     $events = $pdo->query($recentRiskSql)->fetchAll();
     respond(['summary' => $summary, 'suspicious_users' => $users, 'risk_trend' => $events]);
 }
