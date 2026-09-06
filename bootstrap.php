@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 
+if (getenv('VERCEL')) {
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '1');
+}
+
 if (!getenv(DATABASE_URL_ENV) && !is_dir(DB_DIR)) {
     mkdir(DB_DIR, 0775, true);
 }
@@ -20,12 +25,21 @@ function postgresDsn(string $databaseUrl): array
     }
     parse_str($parts['query'] ?? '', $query);
     $sslMode = preg_replace('/[^a-z-]/i', '', (string) ($query['sslmode'] ?? 'require')) ?: 'require';
+    $host = (string) $parts['host'];
+    $endpointId = explode('.', $host, 2)[0];
+    $options = '';
+    if (preg_match('/^ep-[a-z0-9-]+$/i', $endpointId) === 1) {
+        // Older libpq builds (including some XAMPP versions) cannot send SNI.
+        // Neon accepts the compute endpoint as a startup option instead.
+        $options = ';options=endpoint=' . $endpointId;
+    }
     $dsn = sprintf(
-        'pgsql:host=%s;port=%d;dbname=%s;sslmode=%s',
-        $parts['host'],
+        'pgsql:host=%s;port=%d;dbname=%s;sslmode=%s%s',
+        $host,
         (int) ($parts['port'] ?? 5432),
         ltrim($parts['path'], '/'),
-        $sslMode
+        $sslMode,
+        $options
     );
     return [$dsn, rawurldecode((string) ($parts['user'] ?? '')), rawurldecode((string) ($parts['pass'] ?? ''))];
 }
@@ -127,20 +141,6 @@ function seedUsers(PDO $pdo): void
     }
 }
 
-db();
-session_name(SESSION_NAME);
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_set_cookie_params([
-        'httponly' => true,
-        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
-        'samesite' => 'Lax',
-    ]);
-    if (databaseDriver() === 'pgsql') {
-        session_set_save_handler(new DatabaseSessionHandler(db()), true);
-    }
-    session_start();
-}
-
 function ensureSchemaMigrations(PDO $pdo): void
 {
     if (databaseDriver() === 'pgsql') return;
@@ -198,6 +198,20 @@ final class DatabaseSessionHandler implements SessionHandlerInterface
         $stmt->execute();
         return $stmt->rowCount();
     }
+}
+
+db();
+session_name(SESSION_NAME);
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_set_cookie_params([
+        'httponly' => true,
+        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+        'samesite' => 'Lax',
+    ]);
+    if (databaseDriver() === 'pgsql') {
+        session_set_save_handler(new DatabaseSessionHandler(db()), true);
+    }
+    session_start();
 }
 
 function csrfToken(): string

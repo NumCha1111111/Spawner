@@ -3,3 +3,8 @@
 /data/*.sqlite-wal
 /.tmp-sessions/
 /.vercel/
+
+.vercel
+.env*
+/.agents/
+/skills-lock.json
