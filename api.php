@@ -102,15 +102,27 @@ if ($route === 'cages/history' && $method === 'GET') {
     respond(['history' => $stmt->fetchAll()]);
 }
 
-if ($route === 'cages/global-history' && $method === 'GET') {
+if (preg_match('#^cages/global-history(?:/(\d+))?$#', $route, $historyMatch) && $method === 'GET') {
     $viewer = requireUser();
+    $page = max(1, (int) ($historyMatch[1] ?? 1));
+    $perPage = 25;
+    $offset = ($page - 1) * $perPage;
     $stmt = $pdo->prepare("SELECT t.id, t.transaction_id, u.username, c.cage_type, t.quantity, t.previous_quantity, t.new_quantity,
         t.action, t.risk_score, t.risk_level, t.trust_score, t.status, t.reason, t.created_at, t.reviewed_at
         FROM cage_transactions t JOIN cages c ON c.id = t.cage_id JOIN users u ON u.id = t.user_id
         WHERE (? = '1' OR (t.status = 'APPROVED' AND u.username <> ?))
-        ORDER BY t.id DESC LIMIT 200");
-    $stmt->execute([isPrimaryAdmin($viewer) ? '1' : '0', primaryAdminUsername()]);
-    respond(['history' => $stmt->fetchAll()]);
+        ORDER BY t.id DESC LIMIT ? OFFSET ?");
+    $stmt->execute([isPrimaryAdmin($viewer) ? '1' : '0', primaryAdminUsername(), $perPage + 1, $offset]);
+    $history = $stmt->fetchAll();
+    $hasNext = count($history) > $perPage;
+    if ($hasNext) array_pop($history);
+    respond([
+        'history' => $history,
+        'page' => $page,
+        'per_page' => $perPage,
+        'has_previous' => $page > 1,
+        'has_next' => $hasNext,
+    ]);
 }
 
 if ($route === 'cages/my-total' && $method === 'GET') {
