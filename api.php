@@ -277,6 +277,65 @@ if ($route === 'admin/user-inventories' && $method === 'GET') {
     respond(['users' => array_values($users)]);
 }
 
+if (preg_match('#^admin/submission-history(?:/(\d+))?$#', $route, $submissionHistoryMatch) && $method === 'GET') {
+    requirePrimaryAdmin();
+    $page = max(1, (int) ($submissionHistoryMatch[1] ?? 1));
+    $perPage = 10;
+    $offset = ($page - 1) * $perPage;
+    $groupExpression = 'COALESCE(t.batch_id, t.transaction_id)';
+    $stmt = $pdo->prepare("SELECT $groupExpression group_id, MAX(t.id) last_id, MAX(t.created_at) created_at,
+        u.username, t.action, SUM(t.quantity) total_quantity, COUNT(*) item_count
+        FROM cage_transactions t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.action IN ('ADD', 'REMOVE')
+        GROUP BY $groupExpression, u.id, u.username, t.action
+        ORDER BY MAX(t.id) DESC LIMIT ? OFFSET ?");
+    $stmt->execute([$perPage + 1, $offset]);
+    $groups = $stmt->fetchAll();
+    $hasNext = count($groups) > $perPage;
+    if ($hasNext) array_pop($groups);
+
+    if ($groups) {
+        $groupIds = array_column($groups, 'group_id');
+        $placeholders = implode(',', array_fill(0, count($groupIds), '?'));
+        $detailStmt = $pdo->prepare("SELECT $groupExpression group_id, c.cage_type, t.quantity, t.status,
+            t.reason, t.created_at, t.reviewed_at
+            FROM cage_transactions t
+            JOIN cages c ON c.id = t.cage_id
+            WHERE $groupExpression IN ($placeholders) AND t.action IN ('ADD', 'REMOVE')
+            ORDER BY t.id");
+        $detailStmt->execute($groupIds);
+        $details = [];
+        foreach ($detailStmt->fetchAll() as $row) {
+            $details[$row['group_id']][] = [
+                'cage_type' => $row['cage_type'],
+                'quantity' => (int) $row['quantity'],
+                'status' => $row['status'],
+                'reason' => $row['reason'],
+                'created_at' => $row['created_at'],
+                'reviewed_at' => $row['reviewed_at'],
+            ];
+        }
+        foreach ($groups as &$group) {
+            $group['total_quantity'] = (int) $group['total_quantity'];
+            $group['item_count'] = (int) $group['item_count'];
+            $group['items'] = $details[$group['group_id']] ?? [];
+            $statuses = array_values(array_unique(array_column($group['items'], 'status')));
+            $group['status'] = count($statuses) === 1 ? $statuses[0] : 'MIXED';
+            unset($group['last_id']);
+        }
+        unset($group);
+    }
+
+    respond([
+        'batches' => $groups,
+        'page' => $page,
+        'per_page' => $perPage,
+        'has_previous' => $page > 1,
+        'has_next' => $hasNext,
+    ]);
+}
+
 if ($route === 'admin/users' && $method === 'POST') {
     requireAdmin();
     $data = input();
