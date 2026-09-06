@@ -148,6 +148,14 @@ th{font-size:9px;letter-spacing:.1em}
 .user-inventory-empty{margin-top:18px;padding:28px 18px;border:1px dashed #c7d8ce;border-radius:4px;background:var(--surface);color:var(--muted);font-size:12px;text-align:center}
 .user-inventory-loading{margin-top:18px;padding:26px 18px;color:var(--muted);font-size:12px;text-align:center}
 .user-inventory-loading:before{content:"";display:inline-block;width:13px;height:13px;margin-right:8px;border:2px solid #c8d7ce;border-top-color:var(--green);border-radius:50%;vertical-align:-2px;animation:inventory-spin .7s linear infinite}
+.restricted-inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.restricted-inventory-card{min-width:0;padding:15px;border:1px solid var(--line);border-radius:5px;background:var(--surface)}
+.restricted-inventory-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.restricted-inventory-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.restricted-inventory-head span{color:var(--green-dark);font-size:12px;font-weight:800;white-space:nowrap}
+.restricted-inventory-items{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.restricted-inventory-item{padding:5px 7px;border:1px solid #d7e0d7;border-radius:3px;background:#fff;color:var(--muted);font-size:11px}
+.restricted-inventory-item b{color:var(--ink);font-variant-numeric:tabular-nums}
 @keyframes inventory-spin{to{transform:rotate(360deg)}}
 .inventory-table th:first-child,.inventory-table td:first-child{width:44px;text-align:center}
 .inventory-table th:last-child,.inventory-table td:last-child{width:132px;text-align:right}
@@ -263,6 +271,7 @@ input[type="number"]{font-size:15px;font-weight:750;letter-spacing:.015em;text-a
   .user-inventory-table th:first-child,.user-inventory-table td:first-child{width:auto}
   .user-inventory-table th:last-child,.user-inventory-table td:last-child{width:76px}
   .user-inventory-card{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;padding:13px 12px}
+  .restricted-inventory-grid{grid-template-columns:1fr}
   .user-inventory-total{min-width:0;margin-left:0;font-size:12px}
   .user-inventory-open{grid-column:1 / -1;width:100%;margin-top:5px}
   .user-inventory-detail-summary{padding:12px}
@@ -313,6 +322,13 @@ adminView=async function(){
   document.querySelectorAll('#content > section.panel').forEach(panel=>{
     if(panel.querySelector('.eyebrow')?.textContent.trim()==='Trust watchlist')panel.remove();
   });
+  const result=await api('admin/user-inventories');
+  const users=Array.isArray(result.users)?result.users:[];
+  const cards=users.map(user=>'<article class="restricted-inventory-card"><div class="restricted-inventory-head"><strong title="'+esc(user.username)+'">'+esc(user.username)+'</strong><span>รวม '+esc(user.total_quantity)+' กรง</span></div><div class="restricted-inventory-items">'+(user.items.length?user.items.map(item=>'<span class="restricted-inventory-item">'+esc(item.cage_type)+' <b>'+esc(item.quantity)+'</b></span>').join(''):'<span class="metric">ยังไม่มีกรงที่ผ่านการอนุมัติ</span>')+'</div></article>').join('');
+  const inventory=document.createElement('section');
+  inventory.className='panel restricted-inventory-panel';
+  inventory.innerHTML='<div class="eyebrow">User inventory</div><h2>รายชื่อและกรงของแต่ละคน</h2>'+(cards?'<div class="restricted-inventory-grid">'+cards+'</div>':'<div class="empty-state">ยังไม่มีผู้ใช้ในระบบ</div>');
+  document.querySelector('#content')?.prepend(inventory);
 };
 
 const pageRole=<?= json_encode(PAGE_ROLE, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
