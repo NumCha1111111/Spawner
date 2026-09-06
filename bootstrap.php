@@ -171,8 +171,6 @@ function ensureSchemaMigrations(PDO $pdo): void
 
 final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUpdateTimestampHandlerInterface
 {
-    private array $knownExpiry = [];
-
     public function __construct(private PDO $pdo) {}
 
     public function open(string $path, string $name): bool { return true; }
@@ -180,12 +178,10 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
 
     public function read(string $id): string|false
     {
-        $stmt = $this->pdo->prepare('SELECT data, expires_at FROM app_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP');
+        $stmt = $this->pdo->prepare('SELECT data FROM app_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP');
         $stmt->execute([$id]);
-        $row = $stmt->fetch();
-        if ($row === false) return '';
-        $this->knownExpiry[$id] = strtotime((string) $row['expires_at']) ?: 0;
-        return (string) $row['data'];
+        $data = $stmt->fetchColumn();
+        return $data === false ? '' : (string) $data;
     }
 
     public function write(string $id, string $data): bool
@@ -218,9 +214,6 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
     public function updateTimestamp(string $id, string $data): bool
     {
         $lifetime = max(60, (int) ini_get('session.gc_maxlifetime'));
-        $refreshWindow = min(300, max(60, intdiv($lifetime, 4)));
-        if (($this->knownExpiry[$id] ?? 0) > time() + $refreshWindow) return true;
-
         $expiresAt = gmdate('Y-m-d H:i:sP', time() + $lifetime);
         $stmt = $this->pdo->prepare('UPDATE app_sessions SET expires_at = ? WHERE id = ?');
         $ok = $stmt->execute([$expiresAt, $id]);
