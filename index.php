@@ -4,12 +4,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 
 if (!defined('PAGE_ROLE')) {
-    $signedInUser = currentUser();
-    if ($signedInUser !== null) {
-        header('Location: ' . (($signedInUser['role'] ?? '') === 'ADMIN' ? 'admin.php' : 'user.php'));
-        exit;
-    }
-
     define('PAGE_ROLE', 'LOGIN');
 }
 ?>
@@ -445,6 +439,10 @@ async function routeStart(){
   }
 
   if(pageRole==='LOGIN'){
+    if(state.user){
+      location.replace(state.user.role==='ADMIN'?'admin.php':'user.php');
+      return;
+    }
     renderUserLogin();
     return;
   }

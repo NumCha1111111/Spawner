@@ -222,9 +222,12 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
     }
 }
 
-db();
-session_name(SESSION_NAME);
-if (session_status() !== PHP_SESSION_ACTIVE) {
+function startAppSession(bool $readOnly = false): void
+{
+    static $started = false;
+    if ($started) return;
+
+    session_name(SESSION_NAME);
     session_set_cookie_params([
         'httponly' => true,
         'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
@@ -233,11 +236,13 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     if (databaseDriver() === 'pgsql') {
         session_set_save_handler(new DatabaseSessionHandler(db()), true);
     }
-    session_start();
+    session_start($readOnly ? ['read_and_close' => true] : []);
+    $started = true;
 }
 
 function csrfToken(): string
 {
+    startAppSession();
     if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     return $_SESSION['csrf_token'];
 }
@@ -252,6 +257,7 @@ function requireCsrf(): void
 
 function currentUser(): ?array
 {
+    startAppSession();
     if (empty($_SESSION['user_id'])) return null;
     $stmt = db()->prepare('SELECT id, username, role FROM users WHERE id = ?');
     $stmt->execute([$_SESSION['user_id']]);

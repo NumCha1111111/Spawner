@@ -6,6 +6,8 @@ require_once __DIR__ . '/risk_engine.php';
 $route = trim((string) ($_GET['route'] ?? ''), '/');
 $parts = $route === '' ? [] : explode('/', $route);
 $method = $_SERVER['REQUEST_METHOD'];
+$readOnlySession = $method === 'GET' && $route !== 'auth/me';
+startAppSession($readOnlySession);
 $pdo = db();
 
 if ($method === 'POST' && $route !== 'auth/login') requireCsrf();
