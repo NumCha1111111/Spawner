@@ -223,7 +223,7 @@ if ($route === 'admin/user-inventories' && $method === 'GET') {
         FROM users u
         LEFT JOIN cage_balances b ON b.user_id = u.id AND b.quantity > 0
         LEFT JOIN cages c ON c.id = b.cage_id
-        WHERE u.role = 'USER'
+        WHERE u.role = 'USER' OR b.user_id IS NOT NULL
         ORDER BY u.username, b.quantity DESC, c.cage_type")->fetchAll();
     $users = [];
     foreach ($rows as $row) {
