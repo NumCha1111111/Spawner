@@ -215,7 +215,7 @@ if ($route === 'cages/transactions' && $method === 'POST') {
 if ($route === 'admin/users' && $method === 'GET') {
     $admin = requireAdmin();
     if (!isPrimaryAdmin($admin)) {
-        $stmt = $pdo->prepare("SELECT id, username, role, created_at
+        $stmt = $pdo->prepare("SELECT username
             FROM users WHERE username <> ? ORDER BY created_at DESC");
         $stmt->execute([primaryAdminUsername()]);
         $users = $stmt->fetchAll();
