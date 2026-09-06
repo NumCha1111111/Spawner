@@ -329,9 +329,10 @@ adminUsersPage=async function(){
 renderApp=async function(){
   const adminPage=pageRole==='ADMIN';
   layout('<section class="hero"><div class="eyebrow">'+(adminPage?'Operations console':'Shared inventory')+'</div><h1>'+(adminPage?'ดูเฉพาะสิ่งที่ผิดปกติ':'จำนวนกรงที่ทุกคนส่ง อยู่ในที่เดียว')+'</h1><p>'+(adminPage?'รายการปกติจะผ่านอัตโนมัติ หน้านี้จะแสดงเฉพาะรายการที่ต้องใช้ดุลยพินิจ':'ยอดกรงหน้านี้รวมรายการที่ผ่านการอนุมัติของผู้ใช้ทุกคน')+'</p></section><div id="content"></div>');
-  document.querySelector('#account').innerHTML='<span class="pill">'+esc(state.user.username)+'</span> '+(adminPage?(state.user.is_primary_admin?'<button id="addCages" class="secondary">หน้าเพิ่มกรง</button>':'')+'<button id="addUsers" class="secondary">เพิ่มคน</button>'+(state.user.uses_user_view?'<button id="openUserPage" class="secondary">หน้า User</button>':''):'<button id="myTotal" class="secondary">ยอดกรงที่ทุกคนส่ง</button>'+(state.user.role==='ADMIN'?'<button id="openAdminPage" class="secondary">Dashboard</button>':''))+' <button id="logout" class="secondary">ออกจากระบบ</button>';
+  document.querySelector('#account').innerHTML='<span class="pill">'+esc(state.user.username)+'</span> '+(adminPage?(state.user.is_primary_admin?'<button id="dashboardHome" class="secondary">Dashboard</button><button id="addCages" class="secondary">หน้าเพิ่มกรง</button>':'')+'<button id="addUsers" class="secondary">เพิ่มคน</button>'+(state.user.uses_user_view?'<button id="openUserPage" class="secondary">หน้า User</button>':''):'<button id="myTotal" class="secondary">ยอดกรงที่ทุกคนส่ง</button>'+(state.user.role==='ADMIN'?'<button id="openAdminPage" class="secondary">Dashboard</button>':''))+' <button id="logout" class="secondary">ออกจากระบบ</button>';
   document.querySelector('#logout').onclick=async()=>{await api('auth/logout',{method:'POST'});state.user=null;location.replace('index.php')};
   if(adminPage){
+    if(document.querySelector('#dashboardHome'))document.querySelector('#dashboardHome').onclick=adminView;
     if(document.querySelector('#addCages'))document.querySelector('#addCages').onclick=adminAddPage;
     document.querySelector('#addUsers').onclick=adminUsersPage;
     if(document.querySelector('#openUserPage'))document.querySelector('#openUserPage').onclick=()=>location.assign('user.php');
