@@ -6,6 +6,13 @@ require_once __DIR__ . '/bootstrap.php';
 if (!defined('PAGE_ROLE')) {
     define('PAGE_ROLE', 'LOGIN');
 }
+
+if (getenv('VERCEL') && in_array(PAGE_ROLE, ['LOGIN', 'USER'], true)) {
+    // These pages contain only a public application shell. User-specific and
+    // real-time data is still protected and loaded from the uncached API.
+    header('Cache-Control: public, max-age=0, must-revalidate');
+    header('Vercel-CDN-Cache-Control: public, max-age=86400');
+}
 ?>
 <!doctype html>
 <html lang="th">
