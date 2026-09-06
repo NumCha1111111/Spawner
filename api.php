@@ -215,16 +215,20 @@ if ($route === 'cages/transactions' && $method === 'POST') {
 if ($route === 'admin/users' && $method === 'GET') {
     $admin = requireAdmin();
     if (!isPrimaryAdmin($admin)) {
-        $users = $pdo->query("SELECT id, username, role, created_at
-            FROM users WHERE role = 'USER' ORDER BY created_at DESC")->fetchAll();
+        $stmt = $pdo->prepare("SELECT id, username, role, created_at
+            FROM users WHERE username <> ? ORDER BY created_at DESC");
+        $stmt->execute([primaryAdminUsername()]);
+        $users = $stmt->fetchAll();
         respond(['users' => $users]);
     }
-    $users = $pdo->query("SELECT u.id, u.username, u.role, u.created_at, u.last_login_at,
+    $stmt = $pdo->prepare("SELECT u.id, u.username, u.role, u.created_at, u.last_login_at,
         COALESCE(ts.score, 80) trust_score, COUNT(t.id) transactions
         FROM users u LEFT JOIN trust_scores ts ON ts.user_id = u.id
         LEFT JOIN cage_transactions t ON t.user_id = u.id
-        WHERE u.role = 'USER'
-        GROUP BY u.id, ts.score ORDER BY u.created_at DESC")->fetchAll();
+        WHERE u.username <> ?
+        GROUP BY u.id, ts.score ORDER BY u.created_at DESC");
+    $stmt->execute([primaryAdminUsername()]);
+    $users = $stmt->fetchAll();
     respond(['users' => $users]);
 }
 
