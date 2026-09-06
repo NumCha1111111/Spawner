@@ -12,9 +12,14 @@ if ($method === 'POST' && $route !== 'auth/login') requireCsrf();
 
 function resolveCage(PDO $pdo, string $input): array
 {
+    static $cageCache = [];
     $clean = static fn (string $value): string => preg_replace('/[^a-z0-9]/', '', strtolower(trim($value))) ?? '';
     $wanted = $clean($input);
-    $cages = $pdo->query('SELECT id, cage_type FROM cages')->fetchAll();
+    $cacheKey = spl_object_id($pdo);
+    if (!isset($cageCache[$cacheKey])) {
+        $cageCache[$cacheKey] = $pdo->query('SELECT id, cage_type FROM cages')->fetchAll();
+    }
+    $cages = $cageCache[$cacheKey];
     $matches = [];
     foreach ($cages as $cage) {
         $candidate = $clean($cage['cage_type']);
@@ -221,6 +226,105 @@ if ($route === 'cages/transactions' && $method === 'POST') {
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         respond(['error' => $e->getMessage()], 422);
+    }
+}
+
+if ($route === 'admin/user-cages' && $method === 'POST') {
+    $admin = requirePrimaryAdmin();
+    $data = input();
+    $username = trim((string) ($data['username'] ?? ''));
+    $items = $data['items'] ?? null;
+    $note = trim((string) ($data['reason'] ?? ''));
+    if ($username === '' || mb_strlen($username) > 80 || preg_match('/[\x00-\x1F\x7F]/u', $username)) {
+        respond(['error' => 'ชื่อผู้ใช้ต้องยาว 1-80 ตัวอักษรและไม่มีอักขระควบคุม'], 422);
+    }
+    if (mb_strtolower($username) === mb_strtolower(primaryAdminUsername())) {
+        respond(['error' => 'ไม่สามารถเพิ่มกรงให้บัญชีผู้ดูแลหลักได้'], 422);
+    }
+    if (!is_array($items) || count($items) < 1 || count($items) > 100) {
+        respond(['error' => 'กรุณาระบุรายการกรง 1-100 รายการ'], 422);
+    }
+    if (mb_strlen($note) > 250) respond(['error' => 'หมายเหตุต้องไม่เกิน 250 ตัวอักษร'], 422);
+
+    try {
+        $resolvedItems = [];
+        foreach ($items as $item) {
+            $cageType = trim((string) ($item['cage_type'] ?? ''));
+            $quantity = filter_var($item['quantity'] ?? null, FILTER_VALIDATE_INT);
+            if ($cageType === '' || $quantity === false || $quantity < 1 || $quantity > 10000) {
+                throw new RuntimeException('ข้อมูลชนิดกรงหรือจำนวนไม่ถูกต้อง: ' . ($cageType ?: 'ไม่ระบุชนิดกรง'));
+            }
+            $cage = resolveCage($pdo, $cageType);
+            $cageId = (int) $cage['id'];
+            if (!isset($resolvedItems[$cageId])) {
+                $resolvedItems[$cageId] = ['id' => $cageId, 'cage_type' => $cage['cage_type'], 'quantity' => 0];
+            }
+            $resolvedItems[$cageId]['quantity'] += (int) $quantity;
+            if ($resolvedItems[$cageId]['quantity'] > 10000) {
+                throw new RuntimeException('จำนวนรวมต่อชนิดกรงต้องไม่เกิน 10,000: ' . $cage['cage_type']);
+            }
+        }
+
+        $pdo->beginTransaction();
+        $findUser = $pdo->prepare('SELECT id, username, role FROM users WHERE LOWER(username) = LOWER(?) ORDER BY id LIMIT 1');
+        $findUser->execute([$username]);
+        $target = $findUser->fetch();
+        $created = false;
+        if (!$target) {
+            $insertUserSql = databaseDriver() === 'pgsql'
+                ? "INSERT INTO users (username, password_hash, role) VALUES (?, '', 'USER') RETURNING id"
+                : "INSERT INTO users (username, password_hash, role) VALUES (?, '', 'USER')";
+            $insertUser = $pdo->prepare($insertUserSql);
+            $insertUser->execute([$username]);
+            $target = ['id' => databaseDriver() === 'pgsql' ? (int) $insertUser->fetchColumn() : (int) $pdo->lastInsertId(), 'username' => $username, 'role' => 'USER'];
+            $created = true;
+        }
+        $trustInsertSql = databaseDriver() === 'pgsql'
+            ? 'INSERT INTO trust_scores (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING'
+            : 'INSERT OR IGNORE INTO trust_scores (user_id) VALUES (?)';
+        $pdo->prepare($trustInsertSql)->execute([$target['id']]);
+        $trust = trustScore($pdo, (int) $target['id']);
+        $batchId = bin2hex(random_bytes(12));
+        $reason = $note !== '' ? $note : 'เพิ่มโดยผู้ดูแลระบบ';
+        $balanceSql = 'SELECT quantity FROM cage_balances WHERE user_id = ? AND cage_id = ?' . (databaseDriver() === 'pgsql' ? ' FOR UPDATE' : '');
+        $balanceStmt = $pdo->prepare($balanceSql);
+        $upsertBalance = $pdo->prepare("INSERT INTO cage_balances (user_id, cage_id, quantity) VALUES (?, ?, ?)
+            ON CONFLICT(user_id, cage_id) DO UPDATE SET quantity = excluded.quantity, updated_at = CURRENT_TIMESTAMP");
+        $insertTransaction = $pdo->prepare("INSERT INTO cage_transactions
+            (transaction_id, batch_id, user_id, cage_id, quantity, previous_quantity, new_quantity, action, risk_score, risk_level, trust_score, status, reason, reviewed_at, reviewer_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ADD', ?, ?, ?, 'APPROVED', ?, CURRENT_TIMESTAMP, ?)");
+        $insertAudit = $pdo->prepare("INSERT INTO audit_logs
+            (transaction_id, user_id, username, cage_type, quantity, previous_quantity, new_quantity, action, risk_score, risk_level, trust_score, status, reason, created_at, reviewed_at, reviewer_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ADD', ?, ?, ?, 'APPROVED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)");
+        $insertRiskEvent = $pdo->prepare('INSERT INTO risk_events (transaction_id, user_id, rule_code, points, details) VALUES (?, ?, ?, ?, ?)');
+        $results = [];
+        foreach ($resolvedItems as $item) {
+            $balanceStmt->execute([$target['id'], $item['id']]);
+            $previous = (int) ($balanceStmt->fetchColumn() ?: 0);
+            $newQuantity = $previous + $item['quantity'];
+            $assessment = riskAssessment($pdo, (int) $target['id'], (int) $item['id'], (int) $item['quantity'], 'ADD');
+            $upsertBalance->execute([$target['id'], $item['id'], $newQuantity]);
+            $transactionId = bin2hex(random_bytes(12));
+            $insertTransaction->execute([$transactionId, $batchId, $target['id'], $item['id'], $item['quantity'], $previous, $newQuantity,
+                $assessment['score'], $assessment['level'], $trust, $reason, $admin['id']]);
+            $insertAudit->execute([$transactionId, $target['id'], $target['username'], $item['cage_type'], $item['quantity'], $previous, $newQuantity,
+                $assessment['score'], $assessment['level'], $trust, $reason, $admin['id']]);
+            foreach ($assessment['events'] as $event) {
+                $insertRiskEvent->execute([$transactionId, $target['id'], $event['code'], $event['points'], $event['details']]);
+            }
+            $results[] = ['cage_type' => $item['cage_type'], 'quantity' => $item['quantity'], 'new_quantity' => $newQuantity,
+                'risk_score' => $assessment['score'], 'risk_level' => $assessment['level']];
+        }
+        $pdo->commit();
+        respond([
+            'message' => $created ? 'สร้างผู้ใช้และเพิ่มกรงเรียบร้อยแล้ว' : 'เพิ่มกรงให้ผู้ใช้เดิมเรียบร้อยแล้ว',
+            'user' => ['id' => (int) $target['id'], 'username' => $target['username'], 'created' => $created],
+            'batch_id' => $batchId,
+            'items' => $results,
+        ]);
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        respond(['error' => $error->getMessage()], 422);
     }
 }
 

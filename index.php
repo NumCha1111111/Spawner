@@ -358,6 +358,31 @@ adminUsersPage=async function(){
   document.querySelector('#newUser').onsubmit=async event=>{event.preventDefault();const form=new FormData(event.target);try{const created=await api('admin/users',{method:'POST',body:JSON.stringify({username:form.get('username')})});document.querySelector('#userMsg').innerHTML='<div class="notice">'+esc(created.message)+'</div>';adminUsersPage()}catch(error){document.querySelector('#userMsg').innerHTML='<p class="error">'+esc(error.message)+'</p>'}};
 };
 
+adminAddPage=async function(){
+  const result=await api('admin/users');
+  const suggestions=result.users.map(user=>'<option value="'+esc(user.username)+'"></option>').join('');
+  document.querySelector('#content').innerHTML='<button type="button" class="secondary" id="backAdmin">กลับ Dashboard</button><section class="panel" style="max-width:760px;margin:18px auto 0"><div class="eyebrow">ADD CAGES FOR USER</div><h2>เพิ่มกรงให้ผู้ใช้</h2><p class="metric">ถ้ายังไม่มีชื่อนี้ ระบบจะสร้างบัญชี USER ให้อัตโนมัติ ถ้ามีอยู่แล้วจะเพิ่มกรงต่อจากยอดเดิม และบันทึกเป็นหนึ่งรอบที่อนุมัติโดยผู้ดูแลระบบ</p><form id="adminUserCages"><label>ชื่อผู้ใช้</label><input name="username" list="existingUsers" maxlength="80" required autocomplete="off" placeholder="กรอกชื่อผู้ใช้"><datalist id="existingUsers">'+suggestions+'</datalist><label>รายการกรง</label><textarea name="cage_text" rows="10" required placeholder="Enderman 6\nMagma Cube 3\nGuardian 1"></textarea><p class="metric">หนึ่งชนิดต่อหนึ่งบรรทัด: ชนิดกรง ตามด้วยจำนวน</p><label>หมายเหตุ (ถ้ามี)</label><input name="reason" maxlength="250" placeholder="รายละเอียดเพิ่มเติม"><button class="primary" style="margin-top:16px">เพิ่มกรงให้ผู้ใช้นี้</button><div id="adminUserCagesMsg"></div></form></section>';
+  document.querySelector('#backAdmin').onclick=adminView;
+  document.querySelector('#adminUserCages').onsubmit=async event=>{
+    event.preventDefault();
+    const form=event.currentTarget;
+    const data=new FormData(form);
+    const lines=String(data.get('cage_text')).split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+    const items=parseCageText(data.get('cage_text'));
+    const message=document.querySelector('#adminUserCagesMsg');
+    if(items.length!==lines.length){message.innerHTML='<p class="error">ตรวจพบรายการที่อ่านไม่ได้ กรุณาใช้รูปแบบ เช่น Enderman 6 โดยใส่หนึ่งชนิดต่อหนึ่งบรรทัด</p>';return}
+    const submit=form.querySelector('button[type="submit"],button.primary');
+    submit.disabled=true;
+    try{
+      const saved=await api('admin/user-cages',{method:'POST',body:JSON.stringify({username:data.get('username'),reason:data.get('reason'),items})});
+      message.innerHTML='<div class="notice"><strong>'+esc(saved.message)+'</strong><br>'+saved.items.map(item=>esc(item.cage_type)+' +'+esc(item.quantity)+' → รวม '+esc(item.new_quantity)).join(' · ')+'</div>';
+      form.querySelector('[name="cage_text"]').value='';
+      form.querySelector('[name="reason"]').value='';
+    }catch(error){message.innerHTML='<p class="error">'+esc(error.message)+'</p>'}
+    finally{submit.disabled=false}
+  };
+};
+
 renderApp=async function(){
   const adminPage=pageRole==='ADMIN';
   layout('<section class="hero"><div class="eyebrow">'+(adminPage?'Operations console':'Shared inventory')+'</div><h1>'+(adminPage?'ดูเฉพาะสิ่งที่ผิดปกติ':'จำนวนกรงที่ทุกคนส่ง อยู่ในที่เดียว')+'</h1><p>'+(adminPage?'รายการปกติจะผ่านอัตโนมัติ หน้านี้จะแสดงเฉพาะรายการที่ต้องใช้ดุลยพินิจ':'ยอดกรงหน้านี้รวมรายการที่ผ่านการอนุมัติของผู้ใช้ทุกคน')+'</p></section><div id="content"></div>');
