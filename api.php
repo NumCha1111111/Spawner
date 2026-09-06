@@ -39,6 +39,51 @@ function resolveCage(PDO $pdo, string $input): array
     return $matches[0]['cage'];
 }
 
+function requestAccessLocation(): array
+{
+    $isVercel = trim((string) getenv('VERCEL')) !== '';
+    if ($isVercel) {
+        $rawIp = (string) ($_SERVER['HTTP_X_VERCEL_FORWARDED_FOR']
+            ?? $_SERVER['HTTP_X_FORWARDED_FOR']
+            ?? '');
+    } else {
+        $rawIp = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    }
+
+    $ip = trim(explode(',', $rawIp, 2)[0]);
+    if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) $ip = null;
+
+    $countryCode = strtoupper(trim((string) ($_SERVER['HTTP_X_VERCEL_IP_COUNTRY'] ?? '')));
+    if (!preg_match('/^[A-Z]{2}$/', $countryCode)) $countryCode = null;
+
+    return [$ip, $countryCode];
+}
+
+function recordSuccessfulLogin(PDO $pdo, array $user): void
+{
+    [$ip, $countryCode] = requestAccessLocation();
+    try {
+        // Access location is diagnostic personal data, so retain only 90 days.
+        if (databaseDriver() === 'pgsql') {
+            $sql = "WITH expired AS (
+                    DELETE FROM login_access_logs
+                    WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '90 days'
+                    RETURNING id
+                )
+                INSERT INTO login_access_logs (user_id, username, ip_address, country_code)
+                VALUES (?, ?, ?, ?)";
+            $pdo->prepare($sql)->execute([(int) $user['id'], (string) $user['username'], $ip, $countryCode]);
+        } else {
+            $pdo->prepare('INSERT INTO login_access_logs (user_id, username, ip_address, country_code) VALUES (?, ?, ?, ?)')
+                ->execute([(int) $user['id'], (string) $user['username'], $ip, $countryCode]);
+            $pdo->exec("DELETE FROM login_access_logs WHERE created_at < datetime('now', '-90 days')");
+        }
+    } catch (Throwable $e) {
+        // A temporary audit-storage failure must not lock every user out.
+        error_log('Unable to record successful login: ' . $e->getMessage());
+    }
+}
+
 if ($route === 'auth/login' && $method === 'POST') {
     $data = input();
     $username = trim((string) ($data['username'] ?? ''));
@@ -55,6 +100,7 @@ if ($route === 'auth/login' && $method === 'POST') {
     $_SESSION['user_id'] = $user['id'];
     unset($_SESSION['csrf_token']);
     $pdo->prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?')->execute([$user['id']]);
+    recordSuccessfulLogin($pdo, $user);
     respond(['user' => sessionUser(['id' => $user['id'], 'username' => $user['username'], 'role' => $user['role']]), 'csrf_token' => csrfToken()]);
 }
 
@@ -65,6 +111,31 @@ if ($route === 'auth/logout' && $method === 'POST') {
 }
 
 if ($route === 'auth/me' && $method === 'GET') respond(['user' => sessionUser(currentUser()), 'csrf_token' => csrfToken()]);
+
+if (preg_match('#^admin/access-log(?:/(\d+))?$#', $route, $accessLogMatch) && $method === 'GET') {
+    requirePrimaryAdmin();
+    $page = max(1, (int) ($accessLogMatch[1] ?? 1));
+    $perPage = 25;
+    $offset = ($page - 1) * $perPage;
+    $ipExpression = databaseDriver() === 'pgsql'
+        ? 'CASE WHEN ip_address IS NULL THEN NULL ELSE host(ip_address) END'
+        : 'ip_address';
+    $stmt = $pdo->prepare("SELECT id, username, {$ipExpression} AS ip_address, country_code, created_at
+        FROM login_access_logs ORDER BY id DESC LIMIT ? OFFSET ?");
+    $stmt->bindValue(1, $perPage + 1, PDO::PARAM_INT);
+    $stmt->bindValue(2, $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    $entries = $stmt->fetchAll();
+    $hasNext = count($entries) > $perPage;
+    if ($hasNext) array_pop($entries);
+    respond([
+        'entries' => $entries,
+        'page' => $page,
+        'per_page' => $perPage,
+        'has_previous' => $page > 1,
+        'has_next' => $hasNext,
+    ]);
+}
 
 if ($route === 'cages/types' && $method === 'GET') {
     requireUser();

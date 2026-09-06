@@ -87,11 +87,22 @@ CREATE TABLE IF NOT EXISTS app_sessions (
     expires_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS login_access_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    username TEXT NOT NULL,
+    ip_address INET,
+    country_code CHAR(2) CHECK (country_code IS NULL OR country_code ~ '^[A-Z]{2}$'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_created ON cage_transactions(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON cage_transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_batch ON cage_transactions(batch_id);
 CREATE INDEX IF NOT EXISTS idx_risk_events_user_created ON risk_events(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_app_sessions_expires ON app_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_login_access_logs_created ON login_access_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_access_logs_user_created ON login_access_logs(user_id, created_at DESC);
 
 INSERT INTO cages (cage_type) VALUES
     ('Enderman'), ('Magma Cube'), ('Skeleton'), ('Zombie'), ('Creeper'),
