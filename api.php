@@ -6,6 +6,14 @@ require_once __DIR__ . '/risk_engine.php';
 $route = trim((string) ($_GET['route'] ?? ''), '/');
 $parts = $route === '' ? [] : explode('/', $route);
 $method = $_SERVER['REQUEST_METHOD'];
+
+// A first-time visitor cannot have an authenticated session without our
+// HttpOnly session cookie. Return immediately instead of opening PostgreSQL
+// and performing an empty session lookup on every public landing-page load.
+if ($method === 'GET' && $route === 'auth/me' && empty($_COOKIE[SESSION_NAME])) {
+    respond(['user' => null, 'csrf_token' => null]);
+}
+
 $readOnlySession = $method === 'GET' && $route !== 'auth/me';
 startAppSession($readOnlySession);
 $pdo = db();
