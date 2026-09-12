@@ -312,7 +312,7 @@ input[type="number"]{font-size:15px;font-weight:750;letter-spacing:.015em;text-a
 <script>
   const api=async(path,options={},params={})=>{const headers={'Content-Type':'application/json',...(options.headers||{})};if(state.csrfToken)headers['X-CSRF-Token']=state.csrfToken;const query=new URLSearchParams({route:path});Object.entries(params).forEach(([key,value])=>{if(value!==''&&value!=null)query.set(key,value)});const r=await fetch('api.php?'+query.toString(),{...options,headers});const d=await r.json();if(!r.ok)throw Error(d.error||'เกิดข้อผิดพลาด');if(path.startsWith('cages/global-history/'))state.globalHistoryMeta=d;return d};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const displayTime=v=>esc(String(v??'').replace(/\+00(?::?00)?$/,''));
+const displayTime=v=>{const raw=String(v??'').trim().replace('T',' ').replace(/\+00(?::?00)?$/,'');const match=raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);return esc(match?match[1]+' '+match[2]:raw)};
 const globalHistoryRows=history=>history.map(x=>'<tr><td>'+displayTime(x.created_at)+'</td><td><strong>'+esc(x.username)+'</strong></td><td>'+esc(x.cage_type)+'</td><td>'+esc(x.action)+' '+esc(x.quantity)+'</td><td>'+status(x.status)+'</td></tr>').join('');
 const status=v=>v==='APPROVED'&&state.user?.uses_user_view?'':'<span class="badge '+esc(v)+'">'+esc(v)+'</span>';
   let state={user:null,csrfToken:null,globalHistoryMeta:null};
