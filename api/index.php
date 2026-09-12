@@ -7,7 +7,19 @@ if ($path === '/api.php' || str_starts_with($path, '/api/')) {
     if (str_starts_with($path, '/api/')) {
         $_GET['route'] = rawurldecode(substr($path, 5));
     }
-    require dirname(__DIR__) . '/api.php';
+    try {
+        require dirname(__DIR__) . '/api.php';
+    } catch (Throwable $error) {
+        $eventId = bin2hex(random_bytes(8));
+        $route = trim((string) ($_GET['route'] ?? ''), '/');
+        $safeMessage = function_exists('safeSystemErrorMessage') ? safeSystemErrorMessage($error) : 'Unhandled application error';
+        error_log(sprintf('API failure [%s] %s: %s', $eventId, get_debug_type($error), $safeMessage));
+        if (function_exists('recordSystemFailure')) recordSystemFailure($eventId, $route, $error);
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo json_encode(['error' => 'ระบบขัดข้องชั่วคราว', 'event_id' => $eventId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
     exit;
 }
 

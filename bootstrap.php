@@ -343,6 +343,85 @@ function input(): array
     return is_array($data) ? $data : $_POST;
 }
 
+function requireIdempotencyKey(): string
+{
+    $key = trim((string) ($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/', $key)) {
+        respond(['error' => 'คำขอนี้ไม่มีรหัสป้องกันการส่งซ้ำที่ถูกต้อง กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง'], 422);
+    }
+    return $key;
+}
+
+function canonicalRequestValue(mixed $value): mixed
+{
+    if (!is_array($value)) return $value;
+    $isList = $value === [] || array_keys($value) === range(0, count($value) - 1);
+    if ($isList) return array_map('canonicalRequestValue', $value);
+    ksort($value, SORT_STRING);
+    foreach ($value as $key => $item) $value[$key] = canonicalRequestValue($item);
+    return $value;
+}
+
+function requestPayloadHash(array $payload): string
+{
+    $encoded = json_encode(canonicalRequestValue($payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($encoded)) throw new RuntimeException('Unable to fingerprint request payload');
+    return hash('sha256', $encoded);
+}
+
+function claimIdempotentRequest(PDO $pdo, int $userId, string $operation, string $key, string $requestHash): ?array
+{
+    $insertSql = databaseDriver() === 'pgsql'
+        ? 'INSERT INTO request_idempotency (user_id, operation, idempotency_key, request_hash) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING'
+        : 'INSERT OR IGNORE INTO request_idempotency (user_id, operation, idempotency_key, request_hash) VALUES (?, ?, ?, ?)';
+    $insert = $pdo->prepare($insertSql);
+    $insert->execute([$userId, $operation, $key, $requestHash]);
+    if ($insert->rowCount() > 0) return null;
+
+    $existing = $pdo->prepare('SELECT request_hash, response_payload FROM request_idempotency WHERE user_id = ? AND operation = ? AND idempotency_key = ?');
+    $existing->execute([$userId, $operation, $key]);
+    $row = $existing->fetch();
+    if (!$row || !hash_equals((string) $row['request_hash'], $requestHash)) {
+        throw new DomainException('รหัสคำขอนี้ถูกใช้กับข้อมูลอื่นแล้ว กรุณาโหลดหน้าใหม่', 409);
+    }
+    $payload = json_decode((string) ($row['response_payload'] ?? ''), true);
+    if (!is_array($payload)) throw new RuntimeException('คำขอเดิมยังดำเนินการไม่เสร็จ กรุณาลองอีกครั้ง');
+    return $payload;
+}
+
+function storeIdempotentResponse(PDO $pdo, int $userId, string $operation, string $key, array $payload): void
+{
+    $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!is_string($encoded)) throw new RuntimeException('Unable to store idempotent response');
+    $stmt = $pdo->prepare('UPDATE request_idempotency SET response_payload = ? WHERE user_id = ? AND operation = ? AND idempotency_key = ?');
+    $stmt->execute([$encoded, $userId, $operation, $key]);
+}
+
+function safeSystemErrorMessage(Throwable $error): string
+{
+    $message = $error->getMessage();
+    $message = preg_replace('#postgres(?:ql)?://[^\s]+#i', '[redacted-database-url]', $message) ?? 'Application error';
+    $message = preg_replace('/\b(password|token|secret)\s*[=:]\s*[^\s,;]+/i', '$1=[redacted]', $message) ?? 'Application error';
+    return mb_substr($message, 0, 1000);
+}
+
+function recordSystemFailure(string $eventId, string $route, Throwable $error): void
+{
+    try {
+        $pdo = db();
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        $stmt = $pdo->prepare('INSERT INTO system_failure_logs (event_id, route, error_type, error_message) VALUES (?, ?, ?, ?)');
+        $stmt->execute([
+            $eventId,
+            mb_substr($route !== '' ? $route : '/', 0, 160),
+            mb_substr(get_debug_type($error), 0, 120),
+            safeSystemErrorMessage($error),
+        ]);
+    } catch (Throwable) {
+        // The platform error log remains available when PostgreSQL itself is unavailable.
+    }
+}
+
 function jsonRequestMethod(string $method): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== $method) respond(['error' => 'Method not allowed'], 405);

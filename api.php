@@ -254,8 +254,16 @@ if ($route === 'cages/transactions' && $method === 'POST') {
     if (count($items) < 1 || count($items) > 100 || !in_array($action, ['ADD', 'REMOVE'], true)) {
         respond(['error' => 'ข้อมูลรายการไม่ถูกต้อง'], 422);
     }
+    $idempotencyKey = requireIdempotencyKey();
+    $requestHash = requestPayloadHash(['action' => $action, 'reason' => $reason, 'items' => $items]);
     $pdo->beginTransaction();
     try {
+        $replayed = claimIdempotentRequest($pdo, (int) $user['id'], 'cages/transactions', $idempotencyKey, $requestHash);
+        if ($replayed !== null) {
+            $pdo->rollBack();
+            $replayed['idempotent_replay'] = true;
+            respond($replayed);
+        }
         $results = [];
         $batchId = bin2hex(random_bytes(12));
         foreach ($items as $item) {
@@ -311,12 +319,14 @@ if ($route === 'cages/transactions' && $method === 'POST') {
             $results[] = ['cage_type' => $cageType, 'quantity' => $quantity, 'transaction_id' => $transactionId,
                 'status' => $assessment['status'], 'risk_level' => $assessment['level'], 'risk_score' => $assessment['score']];
         }
-        $pdo->commit();
         $pending = count(array_filter($results, static fn (array $result): bool => in_array($result['status'], ['PENDING_REVIEW', 'BLOCKED'], true)));
-        respond(['message' => $pending ? 'บันทึกหลายรายการแล้ว มีรายการที่รอตรวจสอบหรือถูกระงับ' : 'บันทึกหลายรายการและอัปเดตยอดแล้ว', 'items' => $results]);
+        $response = ['message' => $pending ? 'บันทึกหลายรายการแล้ว มีรายการที่รอตรวจสอบหรือถูกระงับ' : 'บันทึกหลายรายการและอัปเดตยอดแล้ว', 'items' => $results, 'idempotent_replay' => false];
+        storeIdempotentResponse($pdo, (int) $user['id'], 'cages/transactions', $idempotencyKey, $response);
+        $pdo->commit();
+        respond($response);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        respond(['error' => $e->getMessage()], 422);
+        respond(['error' => $e->getMessage()], $e instanceof DomainException && $e->getCode() === 409 ? 409 : 422);
     }
 }
 
@@ -336,8 +346,17 @@ if ($route === 'admin/user-cages' && $method === 'POST') {
         respond(['error' => 'กรุณาระบุรายการกรง 1-100 รายการ'], 422);
     }
     if (mb_strlen($note) > 250) respond(['error' => 'หมายเหตุต้องไม่เกิน 250 ตัวอักษร'], 422);
+    $idempotencyKey = requireIdempotencyKey();
+    $requestHash = requestPayloadHash(['username' => $username, 'reason' => $note, 'items' => $items]);
 
     try {
+        $pdo->beginTransaction();
+        $replayed = claimIdempotentRequest($pdo, (int) $admin['id'], 'admin/user-cages', $idempotencyKey, $requestHash);
+        if ($replayed !== null) {
+            $pdo->rollBack();
+            $replayed['idempotent_replay'] = true;
+            respond($replayed);
+        }
         $resolvedItems = [];
         foreach ($items as $item) {
             $cageType = trim((string) ($item['cage_type'] ?? ''));
@@ -356,7 +375,6 @@ if ($route === 'admin/user-cages' && $method === 'POST') {
             }
         }
 
-        $pdo->beginTransaction();
         $findUser = $pdo->prepare('SELECT id, username, role FROM users WHERE LOWER(username) = LOWER(?) ORDER BY id LIMIT 1');
         $findUser->execute([$username]);
         $target = $findUser->fetch();
@@ -406,16 +424,19 @@ if ($route === 'admin/user-cages' && $method === 'POST') {
             $results[] = ['cage_type' => $item['cage_type'], 'quantity' => $item['quantity'], 'new_quantity' => $newQuantity,
                 'risk_score' => $assessment['score'], 'risk_level' => $assessment['level']];
         }
-        $pdo->commit();
-        respond([
+        $response = [
             'message' => $created ? 'สร้างผู้ใช้และเพิ่มกรงเรียบร้อยแล้ว' : 'เพิ่มกรงให้ผู้ใช้เดิมเรียบร้อยแล้ว',
             'user' => ['id' => (int) $target['id'], 'username' => $target['username'], 'created' => $created],
             'batch_id' => $batchId,
             'items' => $results,
-        ]);
+            'idempotent_replay' => false,
+        ];
+        storeIdempotentResponse($pdo, (int) $admin['id'], 'admin/user-cages', $idempotencyKey, $response);
+        $pdo->commit();
+        respond($response);
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        respond(['error' => $error->getMessage()], 422);
+        respond(['error' => $error->getMessage()], $error instanceof DomainException && $error->getCode() === 409 ? 409 : 422);
     }
 }
 
@@ -619,6 +640,51 @@ if ($route === 'admin/users' && $method === 'POST') {
         if ($pdo->inTransaction()) $pdo->rollBack();
         respond(['error' => in_array($error->getCode(), ['23000', '23505'], true) ? 'มีชื่อผู้ใช้นี้อยู่แล้ว' : 'ไม่สามารถเพิ่มผู้ใช้ได้'], 422);
     }
+}
+
+if ($route === 'admin/system-health' && $method === 'GET') {
+    requirePrimaryAdmin();
+    header('Cache-Control: no-store');
+
+    $databaseStartedAt = hrtime(true);
+    $pdo->query('SELECT 1')->fetchColumn();
+    $databaseLatencyMs = round((hrtime(true) - $databaseStartedAt) / 1_000_000, 1);
+    $failureWindowSql = databaseDriver() === 'pgsql'
+        ? "SELECT COUNT(*) FROM system_failure_logs WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'"
+        : "SELECT COUNT(*) FROM system_failure_logs WHERE created_at >= datetime('now', '-24 hours')";
+    $failedRequests = (int) $pdo->query($failureWindowSql)->fetchColumn();
+    $recentFailures = $pdo->query('SELECT event_id, route, error_type, created_at FROM system_failure_logs ORDER BY id DESC LIMIT 5')->fetchAll();
+
+    $region = trim((string) getenv('VERCEL_REGION'));
+    if ($region === '' || !preg_match('/^[a-z0-9-]+$/i', $region)) $region = null;
+    $commit = trim((string) getenv('VERCEL_GIT_COMMIT_SHA'));
+    if (!preg_match('/^[a-f0-9]{7,40}$/i', $commit)) $commit = null;
+
+    respond([
+        'status' => 'healthy',
+        'checked_at' => gmdate('c'),
+        'database' => [
+            'status' => 'online',
+            'driver' => databaseDriver() === 'pgsql' ? 'PostgreSQL' : 'SQLite',
+            'connection' => usesPostgresPooler() ? 'pooled' : 'direct',
+            'latency_ms' => $databaseLatencyMs,
+        ],
+        'runtime' => [
+            'status' => 'online',
+            'php_version' => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION,
+            'environment' => getenv('VERCEL') ? 'production' : 'local',
+            'region' => $region,
+            'commit' => $commit ? substr($commit, 0, 7) : null,
+        ],
+        'session' => [
+            'status' => 'online',
+            'storage' => databaseDriver() === 'pgsql' ? 'PostgreSQL' : 'PHP files',
+        ],
+        'failures' => [
+            'last_24_hours' => $failedRequests,
+            'recent' => $recentFailures,
+        ],
+    ]);
 }
 
 if ($route === 'admin/overview' && $method === 'GET') {

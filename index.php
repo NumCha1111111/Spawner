@@ -238,7 +238,44 @@ input[type="number"]{font-size:15px;font-weight:750;letter-spacing:.015em;text-a
 .access-log-country{display:inline-block;padding:4px 7px;border:1px solid #dbe3d6;border-radius:3px;background:#f5f6ed;color:#476054;font-size:11px;font-weight:750}
 .access-log-state{margin-top:18px}
 
+/* Primary-admin system health: compact, calm, and readable at a glance. */
+.system-health-modal{width:min(880px,100%)}
+.health-overview{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:18px 0 14px;padding:13px 15px;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:5px;background:var(--surface)}
+.health-overview.is-degraded{border-left-color:var(--red);background:#fff7f6}
+.health-overview-copy{min-width:0}
+.health-overview-copy strong{display:block;font-size:16px}
+.health-overview-copy span{display:block;margin-top:2px;color:var(--muted);font-size:13px}
+.health-live{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;color:var(--green-dark);font-size:13px;font-weight:800;white-space:nowrap}
+.health-live:before{content:"";width:9px;height:9px;border-radius:50%;background:#3f9b61;box-shadow:0 0 0 4px rgba(63,155,97,.12)}
+.health-overview.is-degraded .health-live{color:var(--red)}
+.health-overview.is-degraded .health-live:before{background:var(--red);box-shadow:0 0 0 4px rgba(163,63,57,.11)}
+.health-card-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.health-card{min-width:0;padding:13px;border:1px solid var(--line);border-top:3px solid #8cab98;border-radius:5px;background:#fff}
+.health-card.is-degraded{border-top-color:var(--red)}
+.health-card-label{display:block;color:var(--muted);font-size:13px;font-weight:800;letter-spacing:.04em}
+.health-card-value{display:block;margin-top:8px;overflow:hidden;color:var(--ink);font-size:19px;font-weight:850;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+.health-card-detail{display:block;margin-top:3px;overflow:hidden;color:var(--muted);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.health-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:16px 0;padding:11px 14px;border:1px solid var(--line);border-radius:5px;background:var(--surface-soft)}
+.health-meta-row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.health-meta-row:nth-last-child(-n+2){border-bottom:0}
+.health-meta-row span{color:var(--muted)}
+.health-meta-row strong{max-width:62%;overflow:hidden;text-align:right;text-overflow:ellipsis;white-space:nowrap}
+.health-section-title{margin:17px 0 9px;font-size:16px}
+.health-failures{border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.health-failure{display:grid;grid-template-columns:minmax(100px,.8fr) minmax(120px,1.3fr) minmax(110px,1fr) minmax(135px,1fr);gap:12px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px}
+.health-failure:last-child{border-bottom:0}
+.health-failure strong,.health-failure span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.health-failure span{color:var(--muted)}
+.health-empty,.health-error,.health-loading{padding:30px 18px;border:1px dashed var(--line-strong);border-radius:5px;background:var(--surface);color:var(--muted);font-size:13px;text-align:center}
+.health-loading:before{content:"";display:inline-block;width:14px;height:14px;margin-right:8px;border:2px solid var(--line-strong);border-top-color:var(--green);border-radius:50%;vertical-align:-3px;animation:inventory-spin .7s linear infinite}
+.health-error strong{display:block;margin-bottom:4px;color:var(--red);font-size:16px}
+.health-modal-actions{justify-content:flex-end;margin-top:16px}
+.health-modal-actions button:disabled{cursor:wait;opacity:.64;transform:none}
+
 @media(max-width:820px){
+  .health-card-grid{grid-template-columns:1fr 1fr}
+  .health-failure{grid-template-columns:minmax(90px,.8fr) minmax(120px,1.2fr) minmax(100px,1fr)}
+  .health-failure span:last-child{grid-column:1 / -1}
   .submission-history-filters{grid-template-columns:1fr 1fr}
   .review-panel-head{display:block;margin-bottom:11px}
   .review-count{display:block;margin-top:5px}
@@ -305,12 +342,19 @@ input[type="number"]{font-size:15px;font-weight:750;letter-spacing:.015em;text-a
   .user-inventory-total{min-width:0;margin-left:0;font-size:12px}
   .user-inventory-open{grid-column:1 / -1;width:100%;margin-top:5px}
   .user-inventory-detail-summary{padding:12px}
+  .health-overview{align-items:flex-start}
+  .health-card-grid,.health-meta{grid-template-columns:1fr}
+  .health-meta-row:nth-last-child(2){border-bottom:1px solid var(--line)}
+  .health-failure{grid-template-columns:1fr 1fr;gap:4px 10px}
+  .health-failure strong,.health-failure span{white-space:normal;overflow-wrap:anywhere}
+  .health-modal-actions button{flex:1}
 }
 </style>
 </head>
 <body><main class="shell"><div id="app"></div></main>
 <script>
-  const api=async(path,options={},params={})=>{const headers={'Content-Type':'application/json',...(options.headers||{})};if(state.csrfToken)headers['X-CSRF-Token']=state.csrfToken;const query=new URLSearchParams({route:path});Object.entries(params).forEach(([key,value])=>{if(value!==''&&value!=null)query.set(key,value)});const r=await fetch('api.php?'+query.toString(),{...options,headers});const d=await r.json();if(!r.ok)throw Error(d.error||'เกิดข้อผิดพลาด');if(path.startsWith('cages/global-history/'))state.globalHistoryMeta=d;return d};
+  const idempotentRequests=new Map();
+  const api=async(path,options={},params={})=>{const headers={'Content-Type':'application/json',...(options.headers||{})};if(state.csrfToken)headers['X-CSRF-Token']=state.csrfToken;const idempotentPath=options.method==='POST'&&['cages/transactions','admin/user-cages'].includes(path);if(idempotentPath){const signature=String(options.body??'');const previous=idempotentRequests.get(path);const request=previous?.signature===signature?previous:{signature,key:createRequestKey()};idempotentRequests.set(path,request);headers['Idempotency-Key']=request.key}const query=new URLSearchParams({route:path});Object.entries(params).forEach(([key,value])=>{if(value!==''&&value!=null)query.set(key,value)});const r=await fetch('api.php?'+query.toString(),{...options,headers});const d=await r.json();if(!r.ok)throw Error(d.error||'เกิดข้อผิดพลาด');if(idempotentPath)idempotentRequests.delete(path);if(path.startsWith('cages/global-history/'))state.globalHistoryMeta=d;return d};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const displayTime=v=>{const raw=String(v??'').trim().replace('T',' ').replace(/\+00(?::?00)?$/,'');const match=raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);return esc(match?match[1]+' '+match[2]:raw)};
 const globalHistoryRows=history=>history.map(x=>'<tr><td>'+displayTime(x.created_at)+'</td><td><strong>'+esc(x.username)+'</strong></td><td>'+esc(x.cage_type)+'</td><td>'+esc(x.action)+' '+esc(x.quantity)+'</td><td>'+status(x.status)+'</td></tr>').join('');
@@ -327,6 +371,57 @@ async function renderApp(){layout('<section class="hero"><div class="eyebrow">'+
 async function adminAddPage(){await userView();const back=document.createElement('button');back.className='secondary';back.textContent='กลับ Dashboard';back.onclick=adminView;document.querySelector('#content').prepend(back)}
 async function userView(){const [b,types,h]=await Promise.all([api('cages/balance'),api('cages/types'),api('cages/history')]);document.querySelector('#content').innerHTML='<div class="grid"><section><div class="panel"><div class="eyebrow">Current balance</div><div class="stat-grid">'+b.balances.map(x=>'<div class="stat"><b>'+esc(x.quantity)+'</b><span>'+esc(x.cage_type)+'</span></div>').join('')+'</div><div class="metric">Trust score: <strong>'+Number(b.trust_score).toFixed(1)+'</strong> / 100</div></div><div class="panel" style="margin-top:22px"><div class="eyebrow">New transaction</div><h2>อัปเดตจำนวนกรง</h2><form id="tx"><div class="form-row"><div><label>ชนิดกรง</label><select name="cage_type">'+types.cages.map(x=>'<option>'+esc(x.cage_type)+'</option>').join('')+'</select></div><div><label>การทำรายการ</label><select name="action"><option value="ADD">เพิ่มกรง</option><option value="REMOVE">ลดกรง</option></select></div></div><label>จำนวน</label><input type="number" name="quantity" min="1" max="10000" required><label>หมายเหตุ (ถ้ามี)</label><textarea name="reason" rows="2"></textarea><button class="primary" style="margin-top:14px">ส่งรายการ</button><div id="txmsg"></div></form></div></section><section class="panel"><div class="eyebrow">Your history</div><h2>ประวัติรายการ</h2><div class="table-wrap"><table><thead><tr><th>เวลา</th><th>กรง</th><th>จำนวน</th><th>สถานะ</th></tr></thead><tbody>'+h.history.map(x=>'<tr><td>'+displayTime(x.created_at)+'</td><td>'+esc(x.cage_type)+'</td><td>'+esc(x.action)+' '+esc(x.quantity)+'</td><td>'+status(x.status)+'</td></tr>').join('')+'</tbody></table></div></section></div>';document.querySelector('#tx').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{const r=await api('cages/transactions',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});document.querySelector('#txmsg').innerHTML='<div class="notice">'+esc(r.message)+'</div>';userView()}catch(x){document.querySelector('#txmsg').innerHTML='<p class="error">'+esc(x.message)+'</p>'}}}
 function parseCageText(value){return value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(line=>{const match=line.match(/^(.+?)\s*(?:[:=,]|\s)\s*(\d+)\s*$/);return match?{cage_type:match[1].trim(),quantity:Number(match[2])}:null}).filter(Boolean)}
+function createRequestKey(){if(globalThis.crypto?.randomUUID)return crypto.randomUUID();const bytes=new Uint8Array(16);if(globalThis.crypto?.getRandomValues)crypto.getRandomValues(bytes);else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);return [...bytes].map(value=>value.toString(16).padStart(2,'0')).join('')}
+function healthIsOk(value){return /^(ok|healthy|online|ready|connected|available)$/i.test(String(value??''))}
+function healthLabel(value){return healthIsOk(value)?'ปกติ':'ควรตรวจสอบ'}
+function openSystemHealth(){
+  if(!state.user?.is_primary_admin)return;
+  const opener=document.activeElement;
+  const app=document.querySelector('#app');
+  const appWasInert=app?.inert===true;
+  const modal=document.createElement('div');
+  modal.className='modal-backdrop';
+  modal.dataset.systemHealth='1';
+  modal.innerHTML='<section class="modal system-health-modal" role="dialog" aria-modal="true" aria-labelledby="systemHealthTitle"><div class="modal-head"><div><div class="eyebrow">SYSTEM HEALTH</div><h2 id="systemHealthTitle">สถานะระบบ</h2></div><button type="button" class="secondary" data-close-system-health>ปิด</button></div><div data-system-health-content aria-live="polite"><div class="health-loading" role="status">กำลังตรวจสอบระบบ</div></div><div class="actions health-modal-actions"><button type="button" class="secondary" data-refresh-system-health>ตรวจสอบอีกครั้ง</button><button type="button" class="primary" data-close-system-health>ปิด</button></div></section>';
+  document.body.appendChild(modal);
+  const content=modal.querySelector('[data-system-health-content]');
+  const refresh=modal.querySelector('[data-refresh-system-health]');
+  if(app)app.inert=true;
+  const close=()=>{if(app)app.inert=appWasInert;modal.remove();opener?.focus?.()};
+  modal.querySelectorAll('[data-close-system-health]').forEach(button=>button.onclick=close);
+  modal.onclick=event=>{if(event.target===modal)close()};
+  modal.onkeydown=event=>{
+    if(event.key==='Escape'){event.preventDefault();close();return}
+    if(event.key!=='Tab')return;
+    const focusable=[...modal.querySelectorAll('button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(element=>element.getClientRects().length>0);
+    if(!focusable.length){event.preventDefault();return}
+    const first=focusable[0],last=focusable[focusable.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+  };
+  const render=health=>{
+    const database=health.database||{},runtime=health.runtime||{},session=health.session||{},failures=health.failures||{};
+    const recent=Array.isArray(failures.recent)?failures.recent:[];
+    const overallOk=healthIsOk(health.status);
+    const cards=[
+      {label:'API / PHP',value:healthLabel(runtime.status),detail:'PHP '+String(runtime.php_version||'ไม่ทราบ'),ok:healthIsOk(runtime.status)},
+      {label:'PostgreSQL',value:database.latency_ms!==null&&database.latency_ms!==undefined&&String(database.latency_ms).trim()!==''&&Number.isFinite(Number(database.latency_ms))?Number(database.latency_ms).toLocaleString('th-TH')+' ms':'ไม่พร้อมใช้งาน',detail:String(database.connection||'ไม่ทราบ'),ok:healthIsOk(database.status)},
+      {label:'Session',value:healthLabel(session.status),detail:String(session.storage||'ไม่ทราบ'),ok:healthIsOk(session.status)},
+      {label:'คำขอล้มเหลว 24 ชม.',value:Number(failures.last_24_hours||0).toLocaleString('th-TH'),detail:recent.length?'มีเหตุการณ์ล่าสุดให้ตรวจ':'ไม่พบเหตุการณ์ล่าสุด',ok:Number(failures.last_24_hours||0)===0}
+    ];
+    const cardHtml=cards.map(card=>'<article class="health-card '+(card.ok?'':'is-degraded')+'"><span class="health-card-label">'+esc(card.label)+'</span><strong class="health-card-value">'+esc(card.value)+'</strong><span class="health-card-detail" title="'+esc(card.detail)+'">'+esc(card.detail)+'</span></article>').join('');
+    const failureHtml=recent.map(item=>'<div class="health-failure"><strong title="'+esc(item.event_id)+'">'+esc(item.event_id)+'</strong><span title="'+esc(item.route)+'">'+esc(item.route)+'</span><span title="'+esc(item.error_type)+'">'+esc(item.error_type)+'</span><span>'+displayTime(item.created_at)+'</span></div>').join('');
+    const metadata=[['ตรวจล่าสุด',displayTime(health.checked_at)],['Environment',runtime.environment||'ไม่ทราบ'],['Region',runtime.region||'ต้องตรวจจาก Dashboard'],['Commit',runtime.commit||'ไม่ทราบ'],['Database driver',database.driver||'PostgreSQL'],['Connection',database.connection||'ไม่ทราบ'],['Session storage',session.storage||'ไม่ทราบ']].map(item=>'<div class="health-meta-row"><span>'+esc(item[0])+'</span><strong title="'+esc(item[1])+'">'+esc(item[1])+'</strong></div>').join('');
+    content.innerHTML='<div class="health-overview '+(overallOk?'':'is-degraded')+'"><div class="health-overview-copy"><strong>'+(overallOk?'ระบบพร้อมใช้งาน':'ระบบบางส่วนควรตรวจสอบ')+'</strong><span>สถานะล่าสุดจากระบบจริง ณ เวลาที่กดตรวจสอบ</span></div><span class="health-live">'+(overallOk?'ทำงานปกติ':'พบความผิดปกติ')+'</span></div><div class="health-card-grid">'+cardHtml+'</div><div class="health-meta">'+metadata+'</div><h3 class="health-section-title">เหตุการณ์ล้มเหลวล่าสุด</h3>'+(failureHtml?'<div class="health-failures">'+failureHtml+'</div>':'<div class="health-empty">ไม่พบคำขอล้มเหลวในช่วง 24 ชั่วโมงที่ผ่านมา</div>');
+  };
+  const load=async()=>{
+    refresh.disabled=true;refresh.textContent='กำลังตรวจสอบ…';content.innerHTML='<div class="health-loading" role="status">กำลังตรวจสอบระบบ</div>';
+    try{render(await api('admin/system-health'))}
+    catch(error){content.innerHTML='<div class="health-error"><strong>ตรวจสอบสถานะไม่สำเร็จ</strong><span>ระบบไม่สามารถอ่านสถานะได้ในขณะนี้ กรุณาลองอีกครั้ง</span><div style="margin-top:12px"><button type="button" class="secondary" data-inline-health-retry>ลองอีกครั้ง</button></div></div>';content.querySelector('[data-inline-health-retry]').onclick=load}
+    finally{refresh.disabled=false;refresh.textContent='ตรวจสอบอีกครั้ง'}
+  };
+  refresh.onclick=load;modal.querySelector('[data-close-system-health]').focus();load();
+}
 async function userView(){const [b,types,h]=await Promise.all([api('cages/global-balance'),api('cages/types'),api('cages/global-history/'+globalHistoryPage)]);const cageOptions=types.cages.map(x=>'<option value="'+esc(x.cage_type)+'">'+esc(x.cage_type)+'</option>').join('');const balanceRows=b.balances.sort((a,z)=>Number(z.quantity)-Number(a.quantity)).map((x,i)=>'<tr><td>'+((i+1))+'</td><td>'+esc(x.cage_type)+'</td><td><strong>'+esc(x.quantity)+'</strong></td></tr>').join('');document.querySelector('#content').innerHTML='<div class="grid"><section><div class="panel"><div class="eyebrow">All users inventory</div><div class="inventory-total"><strong>'+esc(b.total_quantity)+'</strong><span>กรงที่ทุกคนส่งรวมกัน</span></div><div class="table-wrap inventory-table-wrap"><table class="inventory-table"><thead><tr><th>#</th><th>ชนิดกรง</th><th>จำนวนรวม</th></tr></thead><tbody>'+balanceRows+'</tbody></table></div><div class="metric" style="margin-top:14px">ตารางนี้รวมยอดของผู้ใช้ทุกคน</div></div><div class="panel" style="margin-top:22px"><div class="eyebrow">Bulk transaction</div><h2>เพิ่มหลายชนิดพร้อมกัน</h2><form id="tx"><div class="form-row"><div><label>การทำรายการ</label><select name="action"><option value="ADD">เพิ่มกรง</option><option value="REMOVE">ลดกรง</option></select></div><div><label>หมายเหตุ (ถ้ามี)</label><input name="reason"></div></div><label>วางรายการแบบข้อความ</label><textarea name="cage_text" rows="6" placeholder="Enderman 28\nMagma Cube 18\nZombie Piglin 22"></textarea><p class="metric">หนึ่งรายการต่อหนึ่งบรรทัด: ชื่อกรง ตามด้วยจำนวน</p><div id="bulkRows"><div class="form-row bulk-row"><div><label>ชนิดกรง</label><select name="cage_type">'+cageOptions+'</select></div><div><label>จำนวน</label><input type="number" name="quantity" min="1" max="10000" value="1" required></div></div></div><div class="actions" style="margin-top:12px"><button type="button" class="secondary" id="addRow">+ เพิ่มชนิดกรง</button><button class="primary">ส่งรายการทั้งหมด</button></div><div id="txmsg"></div></form></div></section><section class="panel"><div class="eyebrow">Shared history</div><h2>ประวัติรายการทั้งหมด</h2><div class="table-wrap"><table><thead><tr><th><center>เวลา</center></th><th>ผู้ทำรายการ</th><th>กรง</th><th>จำนวน</th><th>สถานะ</th></tr></thead><tbody>'+globalHistoryRows(h.history)+'</tbody></table></div></section></div>';document.querySelector('#addRow').onclick=()=>{const row=document.createElement('div');row.className='form-row bulk-row';row.innerHTML='<div><label>ชนิดกรง</label><select name="cage_type">'+cageOptions+'</select></div><div><label>จำนวน</label><div class="actions"><input type="number" name="quantity" min="1" max="10000" value="1" required><button type="button" class="danger removeRow">ลบ</button></div></div>';row.querySelector('.removeRow').onclick=()=>row.remove();document.querySelector('#bulkRows').appendChild(row)};document.querySelector('#tx').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);const rows=form.get('cage_text').trim()?parseCageText(form.get('cage_text')):[...document.querySelectorAll('.bulk-row')].map(row=>({cage_type:row.querySelector('[name="cage_type"]').value,quantity:Number(row.querySelector('[name="quantity"]').value)}));try{const r=await api('cages/transactions',{method:'POST',body:JSON.stringify({action:form.get('action'),reason:form.get('reason'),items:rows})});document.querySelector('#txmsg').innerHTML='<div class="notice">'+esc(r.message)+' '+r.items.map(x=>esc(x.cage_type)+' '+status(x.status)).join(' · ')+'</div>';globalHistoryPage=1;userView()}catch(x){document.querySelector('#txmsg').innerHTML='<p class="error">'+esc(x.message)+'</p>'}}}
 async function adminView(){const [o,q]=await Promise.all([api('admin/overview'),api('admin/pending-reviews')]);const counts=Object.fromEntries(o.summary.map(x=>[x.status,x.count]));document.querySelector('#content').innerHTML='<div class="stat-grid"><div class="stat"><b>'+Number(counts.PENDING_REVIEW||0)+'</b><span>Pending review</span></div><div class="stat"><b>'+Number(counts.BLOCKED||0)+'</b><span>High risk blocked</span></div><div class="stat"><b>'+Number(counts.FLAGGED||0)+'</b><span>Flagged but approved</span></div></div><section class="panel"><div class="eyebrow">Review queue</div><h2>รายการที่ระบบคัดมาให้ตรวจ</h2><div class="table-wrap"><table><thead><tr><th>User</th><th>รายการ</th><th>Risk</th><th>เหตุผล</th><th>Action</th></tr></thead><tbody>'+q.items.map(x=>'<tr><td>'+esc(x.username)+'<br><span class="metric">Trust '+Number(x.trust_score).toFixed(1)+'</span></td><td>'+esc(x.action)+' '+esc(x.quantity)+' '+esc(x.cage_type)+'<br>'+status(x.status)+'</td><td><strong>'+esc(x.risk_score)+'</strong> '+status(x.risk_level)+'</td><td style="max-width:300px;white-space:normal">'+esc(x.risk_reasons||'ตรวจสอบรูปแบบโดยรวม')+'</td><td><div class="actions">'+(x.status!=='BLOCKED'?'<button class="secondary" onclick="review('+x.id+',\'approve\')">อนุมัติ</button>':'')+'<button class="danger" onclick="review('+x.id+',\'reject\')">ปฏิเสธ</button></div></td></tr>').join('')+'</tbody></table></div></section><section class="panel" style="margin-top:22px"><div class="eyebrow">Trust watchlist</div><h2>ผู้ใช้ที่ควรติดตาม</h2><div class="table-wrap"><table><thead><tr><th>User</th><th>Trust</th><th>Transactions</th></tr></thead><tbody>'+o.suspicious_users.map(x=>'<tr><td>'+esc(x.username)+'</td><td>'+Number(x.trust_score).toFixed(1)+'</td><td>'+esc(x.transactions)+'</td></tr>').join('')+'</tbody></table></div></section>'}
   async function adminUsersPage(){const result=await api('admin/users');document.querySelector('#content').innerHTML='<button class="secondary" id="backAdmin">กลับ Dashboard</button><div class="grid" style="margin-top:18px"><section class="panel"><div class="eyebrow">User management</div><h2>เพิ่มคน</h2><p class="metric">ผู้ใช้ใหม่จะเข้าสู่ระบบด้วยชื่อที่กำหนดไว้</p><form id="newUser"><label>ชื่อผู้ใช้</label><input name="username" maxlength="80" required><button class="primary" style="margin-top:14px">เพิ่มผู้ใช้</button><div id="userMsg"></div></form></section><section class="panel"><div class="eyebrow">People</div><h2>รายชื่อผู้ใช้</h2><div class="table-wrap"><table><thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>Trust</th><th>รายการ</th></tr></thead><tbody>'+result.users.map(x=>'<tr><td>'+esc(x.username)+'</td><td>'+esc(x.role)+'</td><td>'+Number(x.trust_score).toFixed(1)+'</td><td>'+esc(x.transactions)+'</td></tr>').join('')+'</tbody></table></div></section></div>';document.querySelector('#backAdmin').onclick=adminView;document.querySelector('#newUser').onsubmit=async e=>{e.preventDefault();const form=new FormData(e.target);try{const created=await api('admin/users',{method:'POST',body:JSON.stringify({username:form.get('username')})});document.querySelector('#userMsg').innerHTML='<div class="notice">'+esc(created.message)+'</div>';adminUsersPage()}catch(error){document.querySelector('#userMsg').innerHTML='<p class="error">'+esc(error.message)+'</p>'}}}
@@ -376,9 +471,10 @@ async function openAccessLog(initialPage=1){
   loadPage(initialPage);
 }
 function decorateAccount(){const account=document.querySelector('#account');if(!account||account.dataset.decorated)return;const pill=account.querySelector('.pill');if(!pill)return;const name=(state.user&&state.user.username)||pill.textContent.split('·')[0].trim();account.dataset.decorated='1';pill.className='account-user';pill.textContent=name;if(pageRole==='ADMIN')document.querySelector('.hero')?.remove();account.querySelectorAll('button').forEach(button=>button.classList.add('logout-button'));const myTotal=account.querySelector('#myTotal');if(myTotal)myTotal.textContent='กรงของแต่ละคนที่ส่งมา';if(pageRole==='ADMIN'&&state.user?.is_primary_admin&&!account.querySelector('#allUserInventories')){const button=document.createElement('button');button.id='allUserInventories';button.className='secondary';button.textContent='กรงของแต่ละคน';button.onclick=openAdminUserInventories;const logout=account.querySelector('#logout');account.insertBefore(button,logout)}}
+function decorateSystemHealthButton(){const account=document.querySelector('#account');if(pageRole!=='ADMIN'||!state.user?.is_primary_admin||!account||account.querySelector('#systemHealth'))return;const button=document.createElement('button');button.id='systemHealth';button.className='secondary logout-button';button.textContent='สถานะระบบ';button.onclick=openSystemHealth;account.insertBefore(button,account.querySelector('#logout'))}
 function adjustHistoryTime(){document.querySelectorAll('#content table').forEach(table=>{if(table.dataset.timeAdjusted)return;const headers=[...table.querySelectorAll('thead th')];if(!headers.some(header=>header.textContent.trim()==='ผู้ทำรายการ'))return;table.dataset.timeAdjusted='1';headers[0].textContent='เวลา';headers[0].style.width='28%'})}
 new MutationObserver(adjustHistoryTime).observe(document.body,{childList:true,subtree:true});
-new MutationObserver(()=>{decorateNumericTables();const account=document.querySelector('#account');if(account&&account.dataset.decorated!=='1')decorateAccount()}).observe(document.body,{childList:true,subtree:true});
+new MutationObserver(()=>{decorateNumericTables();const account=document.querySelector('#account');if(account&&account.dataset.decorated!=='1')decorateAccount();decorateSystemHealthButton()}).observe(document.body,{childList:true,subtree:true});
 
 const pageRole=<?= json_encode(PAGE_ROLE, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
@@ -425,7 +521,7 @@ adminAddPage=async function(){
     submit.disabled=true;
     try{
       const saved=await api('admin/user-cages',{method:'POST',body:JSON.stringify({username:data.get('username'),reason:data.get('reason'),items})});
-      message.innerHTML='<div class="notice"><strong>'+esc(saved.message)+'</strong><br>'+saved.items.map(item=>esc(item.cage_type)+' +'+esc(item.quantity)+' → รวม '+esc(item.new_quantity)).join(' · ')+'</div>';
+      message.innerHTML='<div class="notice"><strong>'+esc(saved.message)+'</strong>'+(saved.idempotent_replay?'<br>ใช้ผลลัพธ์เดิมแล้ว ไม่มีการสร้างรายการซ้ำ':'')+'<br>'+saved.items.map(item=>esc(item.cage_type)+' +'+esc(item.quantity)+' → รวม '+esc(item.new_quantity)).join(' · ')+'</div>';
       form.querySelector('[name="cage_text"]').value='';
       form.querySelector('[name="reason"]').value='';
     }catch(error){message.innerHTML='<p class="error">'+esc(error.message)+'</p>'}
@@ -518,6 +614,33 @@ async function routeStart(){
 
   renderApp();
 }
+
+document.addEventListener('submit',async event=>{
+  const form=event.target;
+  if(form.id!=='tx')return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const data=new FormData(form);
+  const rows=String(data.get('cage_text')??'').trim()?parseCageText(String(data.get('cage_text'))):[...form.querySelectorAll('.bulk-row')].map(row=>({cage_type:row.querySelector('[name="cage_type"]').value,quantity:Number(row.querySelector('[name="quantity"]').value)}));
+  const payload={action:data.get('action'),reason:data.get('reason'),items:rows};
+  const submit=form.querySelector('button.primary');
+  const original=submit.textContent;
+  submit.disabled=true;
+  submit.textContent='กำลังส่ง…';
+  try{
+    const result=await api('cages/transactions',{method:'POST',body:JSON.stringify(payload)});
+    const confirmation='<div class="notice" role="status">'+esc(result.message)+(result.idempotent_replay?' — ใช้ผลลัพธ์เดิมแล้ว ไม่มีการสร้างรายการซ้ำ':'')+' '+result.items.map(item=>esc(item.cage_type)+' '+status(item.status)).join(' · ')+'</div>';
+    globalHistoryPage=1;
+    await userView();
+    const message=document.querySelector('#txmsg');
+    if(message)message.innerHTML=confirmation;
+  }catch(error){
+    document.querySelector('#txmsg').innerHTML='<p class="error">'+esc(error.message)+'</p>';
+  }finally{
+    submit.disabled=false;
+    submit.textContent=original;
+  }
+},true);
 
 document.addEventListener('click',async event=>{
   const logout=event.target.closest('#logout');

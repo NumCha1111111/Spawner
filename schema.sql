@@ -101,11 +101,33 @@ CREATE TABLE IF NOT EXISTS login_access_logs (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS request_idempotency (
+    user_id INTEGER NOT NULL,
+    operation TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_payload TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, operation, idempotency_key),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS system_failure_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,
+    route TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    error_message TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_created ON cage_transactions(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON cage_transactions(status);
 CREATE INDEX IF NOT EXISTS idx_risk_events_user_created ON risk_events(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_login_access_logs_created ON login_access_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_access_logs_user_created ON login_access_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_request_idempotency_created ON request_idempotency(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_failure_logs_created ON system_failure_logs(created_at DESC);
 
 INSERT OR IGNORE INTO cages (cage_type) VALUES
     ('Enderman'), ('Magma Cube'), ('Skeleton'), ('Zombie'), ('Creeper'),

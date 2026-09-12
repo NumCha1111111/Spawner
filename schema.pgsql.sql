@@ -96,6 +96,25 @@ CREATE TABLE IF NOT EXISTS login_access_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS request_idempotency (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    operation TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    request_hash CHAR(64) NOT NULL,
+    response_payload JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, operation, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS system_failure_logs (
+    id BIGSERIAL PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE,
+    route TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    error_message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_created ON cage_transactions(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON cage_transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_batch ON cage_transactions(batch_id);
@@ -103,6 +122,8 @@ CREATE INDEX IF NOT EXISTS idx_risk_events_user_created ON risk_events(user_id, 
 CREATE INDEX IF NOT EXISTS idx_app_sessions_expires ON app_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_login_access_logs_created ON login_access_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_access_logs_user_created ON login_access_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_request_idempotency_created ON request_idempotency(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_failure_logs_created ON system_failure_logs(created_at DESC);
 
 INSERT INTO cages (cage_type) VALUES
     ('Enderman'), ('Magma Cube'), ('Skeleton'), ('Zombie'), ('Creeper'),
