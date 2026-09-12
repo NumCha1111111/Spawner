@@ -49,19 +49,29 @@ function resolveCage(PDO $pdo, string $input): array
 
 function requestAccessLocation(): array
 {
-    $isVercel = trim((string) getenv('VERCEL')) !== '';
-    if ($isVercel) {
+    $proxySecret = (string) getenv('CLOUDFLARE_PROXY_SECRET');
+    $providedProxySecret = (string) ($_SERVER['HTTP_X_BEACON_PROXY_SECRET'] ?? '');
+    $trustedFallbackProxy = $proxySecret !== ''
+        && $providedProxySecret !== ''
+        && hash_equals($proxySecret, $providedProxySecret);
+
+    if ($trustedFallbackProxy) {
+        $rawIp = (string) ($_SERVER['HTTP_X_BEACON_CLIENT_IP'] ?? '');
+        $rawCountryCode = (string) ($_SERVER['HTTP_X_BEACON_CLIENT_COUNTRY'] ?? '');
+    } elseif (trim((string) getenv('VERCEL')) !== '') {
         $rawIp = (string) ($_SERVER['HTTP_X_VERCEL_FORWARDED_FOR']
             ?? $_SERVER['HTTP_X_FORWARDED_FOR']
             ?? '');
+        $rawCountryCode = (string) ($_SERVER['HTTP_X_VERCEL_IP_COUNTRY'] ?? '');
     } else {
         $rawIp = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $rawCountryCode = '';
     }
 
     $ip = trim(explode(',', $rawIp, 2)[0]);
     if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) $ip = null;
 
-    $countryCode = strtoupper(trim((string) ($_SERVER['HTTP_X_VERCEL_IP_COUNTRY'] ?? '')));
+    $countryCode = strtoupper(trim($rawCountryCode));
     if (!preg_match('/^[A-Z]{2}$/', $countryCode)) $countryCode = null;
 
     return [$ip, $countryCode];

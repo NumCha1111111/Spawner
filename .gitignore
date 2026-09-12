@@ -3,6 +3,7 @@
 /data/*.sqlite-wal
 /.tmp-sessions/
 /.vercel/
+/.wrangler/
 
 .vercel
 .env*
