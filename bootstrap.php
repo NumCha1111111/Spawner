@@ -44,6 +44,13 @@ function postgresDsn(string $databaseUrl): array
     return [$dsn, rawurldecode((string) ($parts['user'] ?? '')), rawurldecode((string) ($parts['pass'] ?? ''))];
 }
 
+function usesPostgresPooler(): bool
+{
+    if (databaseDriver() !== 'pgsql') return false;
+    $host = parse_url((string) getenv(DATABASE_URL_ENV), PHP_URL_HOST);
+    return is_string($host) && str_contains(strtolower($host), '-pooler.');
+}
+
 function db(): PDO
 {
     static $pdo;
@@ -61,7 +68,11 @@ function db(): PDO
         $pdo = new PDO($dsn, $username, $password, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
+            // PgBouncer transaction pooling can hand a request a backend that
+            // already owns PDO's generated prepared-statement name. Emulating
+            // prepares keeps parameter binding safe without leaking named
+            // statements across pooled server connections.
+            PDO::ATTR_EMULATE_PREPARES => usesPostgresPooler(),
         ]);
         if (databaseDriver() === 'sqlite') $pdo->exec('PRAGMA foreign_keys = ON');
         if ($initializeDatabase) {
